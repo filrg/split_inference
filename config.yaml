@@ -7,10 +7,15 @@ server:
     - 1
   model: VGG16
 rabbit:
-  address: 127.0.0.1
-  username: admin
-  password: admin
+  address: 100.77.218.44
+  username: dai
+  password: dai
   virtual-host: /
 
 log-path: .
 debug-mode: False
+
+watchdog:
+  device-timeout: 30  # Thời gian timeout của thiết bị (giây)
+  check-interval: 10   # Khoảng thời gian kiểm tra (giây)
+

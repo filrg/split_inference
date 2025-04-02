@@ -1,9 +1,9 @@
 import pickle
 import time
-
 import pika
 import torch
 import torch.nn as nn
+import threading
 
 import src.Log
 import src.Model
@@ -25,6 +25,7 @@ class RpcClient:
         self.response = None
         self.model = None
         self.connect()
+        self.start_heartbeat_listener()
 
     def wait_response(self):
         status = True
@@ -59,13 +60,15 @@ class RpcClient:
             self.model.to(self.device)
             if state_dict:
                 self.model.load_state_dict(state_dict)
-            status = True
             self.inference_func(self.model, num_layers)
-            # Stop or Error
-            return False
-        else:
 
-            return False
+            # Gửi thông báo inference hoàn tất
+            data = {"action": "INFERENCE_DONE", "client_id": self.client_id, "layer_id": self.layer_id,
+                    "message": "Inference completed"}
+            src.Log.print_with_color("[>>>] Client sending INFERENCE_DONE message to server...", "red")
+            self.send_to_server(data)
+            return True
+        return True
 
     def connect(self):
         credentials = pika.PlainCredentials(self.username, self.password)
@@ -79,3 +82,32 @@ class RpcClient:
                                    routing_key='rpc_queue',
                                    body=pickle.dumps(message))
 
+    def start_heartbeat_listener(self):
+        credentials = pika.PlainCredentials(self.username, self.password)
+        connection = pika.BlockingConnection(
+            pika.ConnectionParameters(self.address, 5672, self.virtual_host, credentials))
+        heartbeat_channel = connection.channel()
+        heartbeat_channel.queue_declare(queue='watchdog_queue', durable=False)
+
+        def callback(ch, method, properties, body):
+            try:
+                message = pickle.loads(body)
+                src.Log.print_with_color(f"Client {self.client_id} received heartbeat request: {message}", "cyan")
+                if message["action"] == "HEARTBEAT_REQUEST" and message["client_id"] == self.client_id:
+                    response = {
+                        "action": "HEARTBEAT",
+                        "client_id": self.client_id,
+                        "layer_id": self.layer_id,
+                        "message": "Client alive"
+                    }
+                    self.send_to_server(response)
+                    src.Log.print_with_color(f"Client {self.client_id} sent heartbeat response", "cyan")
+            except Exception as e:
+                src.Log.print_with_color(f"Error in heartbeat listener for client {self.client_id}: {str(e)}", "red")
+
+        heartbeat_channel.basic_consume(
+            queue='watchdog_queue',
+            on_message_callback=callback,
+            auto_ack=True
+        )
+        threading.Thread(target=heartbeat_channel.start_consuming, daemon=True).start()
