@@ -21,7 +21,7 @@ class Server:
         self.model_name = config["server"]["model"]
         self.total_clients = config["server"]["clients"]
         self.cut_layer = config["server"]["cut-layer"]
-        self.batch_size = config["server"]["batch-size"]
+        self.batch_frame = config["server"]["batch-frame"]
         self.save_output = config["server"]["save-output"]
 
         credentials = pika.PlainCredentials(username, password)
@@ -96,10 +96,10 @@ class Server:
 
             response = {"action": "START",
                         "message": "Server accept the connection",
-                        "model": None,
+                        "model": encoded,
                         "splits": splits[0],
                         "save_layers": splits[1],
-                        "batch_size": self.batch_size,
+                        "batch_size": self.batch_frame,
                         "num_layers": len(self.total_clients),
                         "model_name": self.model_name,
                         "save_output": self.save_output}

@@ -1,6 +1,7 @@
 import pickle
 import time
 import base64
+import os
 
 import pika
 import torch
@@ -47,21 +48,25 @@ class RpcClient:
             num_layers = self.response["num_layers"]
             splits = self.response["splits"]
             save_layers = self.response["save_layers"]
-            batch_size = self.response["batch_size"]
+            batch_frame = self.response["batch_frame"]
             model = self.response["model"]
             save_output = self.response["save_output"]
             if model is not None:
-                decoder = base64.b64decode(model)
-                with open(f"{model_name}.pt", "wb") as f:
-                    f.write(decoder)
-                src.Log.print_with_color(f"Loaded {model_name}.pt", "green")
+                file_path = f'{model_name}.pt'
+                if os.path.exists(file_path):
+                    src.Log.print_with_color(f"Exist {model_name}.pt", "green")
+                else:
+                    decoder = base64.b64decode(model)
+                    with open(f"{model_name}.pt", "wb") as f:
+                        f.write(decoder)
+                    src.Log.print_with_color(f"Loaded {model_name}.pt", "green")
             else:
                 src.Log.print_with_color(f"Do not load model.", "yellow")
 
             pretrain_model = YOLO(f"{model_name}.pt").model
             self.model = SplitDetectionModel(pretrain_model, split_layer=splits)
 
-            self.inference_func(self.model, num_layers, save_layers, batch_size, save_output)
+            self.inference_func(self.model, num_layers, save_layers, batch_frame, save_output)
             # Stop or Error
             return False
         else:

@@ -37,7 +37,7 @@ class Scheduler:
             body=message
         )
 
-    def first_layer(self, model, save_layers, batch_size, save_output):
+    def first_layer(self, model, save_layers, batch_frame, save_output):
         input_image = []
         predictor = SplitDetectionPredictor(model, overrides={"imgsz": 640})
 
@@ -73,7 +73,7 @@ class Scheduler:
                 tensor /= 255.0
                 input_image.append(tensor)
                 # input_image = tensor.unsqueeze(0)
-                if len(input_image) == batch_size:
+                if len(input_image) == batch_frame:
                     input_image = torch.stack(input_image)
                     # Prepare data
                     predictor.setup_source(input_image)
@@ -156,9 +156,9 @@ class Scheduler:
     def middle_layer(self, model):
         pass
 
-    def inference_func(self, model, num_layers, save_layers, batch_size, save_output):
+    def inference_func(self, model, num_layers, save_layers, batch_frame, save_output):
         if self.layer_id == 1:
-            self.first_layer(model, save_layers, batch_size, save_output)
+            self.first_layer(model, save_layers, batch_frame, save_output)
         elif self.layer_id == num_layers:
             self.last_layer(model, save_output)
         else:
