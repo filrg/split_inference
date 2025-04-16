@@ -6,7 +6,6 @@ server:
     - 1
   model: yolov8n
   batch-frame: 1
-  save-output: False
 rabbit:
   address: 127.0.0.1
   username: admin

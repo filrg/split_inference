@@ -22,7 +22,6 @@ class Server:
         self.total_clients = config["server"]["clients"]
         self.cut_layer = config["server"]["cut-layer"]
         self.batch_frame = config["server"]["batch-frame"]
-        self.save_output = config["server"]["save-output"]
 
         credentials = pika.PlainCredentials(username, password)
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(address, 5672, f'{virtual_host}', credentials))
@@ -36,7 +35,8 @@ class Server:
         self.reply_channel = self.connection.channel()
         self.channel.basic_consume(queue='rpc_queue', on_message_callback=self.on_request)
 
-        debug_mode = config["debug-mode"]
+        self.data = config["data"]
+        self.debug_mode = config["debug-mode"]
         log_path = config["log-path"]
         self.logger = src.Log.Logger(f"{log_path}/app.log")
         self.logger.log_info(f"Application start. Server is waiting for {self.total_clients} clients.")
@@ -99,9 +99,10 @@ class Server:
                         "model": encoded,
                         "splits": splits[0],
                         "save_layers": splits[1],
-                        "batch_size": self.batch_frame,
+                        "batch_frame": self.batch_frame,
                         "num_layers": len(self.total_clients),
                         "model_name": self.model_name,
-                        "save_output": self.save_output}
+                        "data": self.data,
+                        "debug_mode": self.debug_mode}
 
             self.send_to_response(client_id, pickle.dumps(response))

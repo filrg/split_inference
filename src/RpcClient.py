@@ -26,6 +26,8 @@ class RpcClient:
         self.connection = None
         self.response = None
         self.model = None
+        self.data = None
+        self.logger = None
         self.connect()
 
     def wait_response(self):
@@ -50,7 +52,9 @@ class RpcClient:
             save_layers = self.response["save_layers"]
             batch_frame = self.response["batch_frame"]
             model = self.response["model"]
-            save_output = self.response["save_output"]
+            data = self.response["data"]
+            debug_mode = self.response["debug_mode"]
+            self.logger = src.Log.Logger(f"debug.log", debug_mode)
             if model is not None:
                 file_path = f'{model_name}.pt'
                 if os.path.exists(file_path):
@@ -65,8 +69,13 @@ class RpcClient:
 
             pretrain_model = YOLO(f"{model_name}.pt").model
             self.model = SplitDetectionModel(pretrain_model, split_layer=splits)
-
-            self.inference_func(self.model, num_layers, save_layers, batch_frame, save_output)
+            start = time.time()
+            self.logger.log_info(f"Start Inference")
+            time_inference = self.inference_func(self.model, data, num_layers, save_layers, batch_frame, self.logger)
+            all_time = time.time() - start
+            self.logger.log_info(f"All time: {all_time}s")
+            self.logger.log_info(f"Inference time: {time_inference}s")
+            self.logger.log_info(f"Utilization: {((time_inference / all_time) * 100):.2f} %")
             # Stop or Error
             return False
         else:
