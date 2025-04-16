@@ -54,7 +54,7 @@ class RpcClient:
             model = self.response["model"]
             data = self.response["data"]
             debug_mode = self.response["debug_mode"]
-            self.logger = src.Log.Logger(f"debug.log", debug_mode)
+            self.logger = src.Log.Logger(f"result.log", debug_mode)
             if model is not None:
                 file_path = f'{model_name}.pt'
                 if os.path.exists(file_path):
