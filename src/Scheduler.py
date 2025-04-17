@@ -59,7 +59,6 @@ class Scheduler:
             if not ret:
                 y = 'STOP'
                 self.send_next_layer(self.intermediate_queue, y, logger)
-                logger.log_info(f"End Inference.")
                 break
             frame = cv2.resize(frame, (640, 640))
             tensor = torch.from_numpy(frame).float().permute(2, 0, 1)  # shape: (3, 640, 640)
@@ -83,15 +82,16 @@ class Scheduler:
                 #     y["img"] = preprocess_image
                 #     y["orig_imgs"] = input_image
                 #     y["path"] = path
+                time_inference += (time.time() - start)
                 self.send_next_layer(self.intermediate_queue, y, logger)
                 input_image = []
-                time_inference += (time.time() - start)
                 pbar.update(batch_frame)
             else:
                 continue
 
         cap.release()
         pbar.close()
+        logger.log_info(f"End Inference.")
         return time_inference
 
     def last_layer(self, model, batch_frame, logger):
@@ -107,12 +107,12 @@ class Scheduler:
         while True:
             method_frame, header_frame, body = self.channel.basic_get(queue=last_queue, auto_ack=True)
             if method_frame and body:
-                start = time.time()
+
                 received_data = pickle.loads(body)
                 if received_data != 'STOP':
                     y = received_data["data"]
                     y["layers_output"] = [t.to(self.device) if t is not None else None for t in y["layers_output"]]
-
+                    start = time.time()
                     # Tail predict
                     predictions = model.forward_tail(y)
 
@@ -126,6 +126,7 @@ class Scheduler:
             else:
                 continue
         pbar.close()
+        logger.log_info(f"End Inference.")
         return time_inference
 
     def middle_layer(self, model):
