@@ -48,3 +48,4 @@ if __name__ == "__main__":
     client = RpcClient(client_id, args.layer_id, address, username, password, virtual_host, scheduler.inference_func, device)
     client.send_to_server(data)
     client.wait_response()
+    channel.close()

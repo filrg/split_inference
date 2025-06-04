@@ -1,9 +1,13 @@
+import threading
+import queue
+from queue import Full
 import pickle
 import time
 from tqdm import tqdm
 import torch
 import cv2
 from src.Model import SplitDetectionPredictor
+from src.Communication import sender_thread, receiver_thread
 
 
 class Scheduler:
@@ -15,7 +19,7 @@ class Scheduler:
         self.intermediate_queue = f"intermediate_queue_{self.layer_id}"
         self.channel.queue_declare(self.intermediate_queue, durable=False)
 
-    def send_next_layer(self, intermediate_queue, data, logger):
+    def send_next_layer(self, intermediate_queue, data):
         if data != 'STOP':
             data["layers_output"] = [t.cpu() if isinstance(t, torch.Tensor) else None for t in data["layers_output"]]
             message = pickle.dumps({
@@ -37,6 +41,11 @@ class Scheduler:
             )
 
     def first_layer(self, model, data, save_layers, batch_frame, logger):
+        queue_out = queue.Queue(maxsize=10)
+        t_send = threading.Thread(target=sender_thread, args=(queue_out,self.intermediate_queue, self.channel,))
+        t_send.daemon = True
+        t_send.start()
+
         time_inference = 0
         input_image = []
         predictor = SplitDetectionPredictor(model, overrides={"imgsz": 640})
@@ -58,7 +67,12 @@ class Scheduler:
             ret, frame = cap.read()
             if not ret:
                 y = 'STOP'
-                self.send_next_layer(self.intermediate_queue, y, logger)
+                while True:
+                    try:
+                        queue_out.put(y, block=False)
+                        break
+                    except Full:
+                        time.sleep(0.5)
                 break
             frame = cv2.resize(frame, (640, 640))
             tensor = torch.from_numpy(frame).float().permute(2, 0, 1)  # shape: (3, 640, 640)
@@ -83,7 +97,13 @@ class Scheduler:
                 #     y["orig_imgs"] = input_image
                 #     y["path"] = path
                 time_inference += (time.time() - start)
-                self.send_next_layer(self.intermediate_queue, y, logger)
+                # self.send_next_layer(self.intermediate_queue, y)
+                while True:
+                    try:
+                        queue_out.put(y, block=False)
+                        break
+                    except Full:
+                        time.sleep(0.5)
                 input_image = []
                 pbar.update(batch_frame)
             else:
@@ -95,20 +115,24 @@ class Scheduler:
         return time_inference
 
     def last_layer(self, model, batch_frame, logger):
+        previous_queue = f"intermediate_queue_{self.layer_id - 1}"
+        queue_in = queue.Queue(maxsize=10)
+        t_send = threading.Thread(target=receiver_thread, args=(queue_in, previous_queue, self.channel,))
+        t_send.daemon = True
+        t_send.start()
+
         time_inference = 0
         predictor = SplitDetectionPredictor(model, overrides={"imgsz": 640})
 
         model.eval()
         model.to(self.device)
-        last_queue = f"intermediate_queue_{self.layer_id - 1}"
-        self.channel.queue_declare(queue=last_queue, durable=False)
-        self.channel.basic_qos(prefetch_count=50)
+
+        # self.channel.queue_declare(queue=last_queue, durable=False)
+        # self.channel.basic_qos(prefetch_count=50)
         pbar = tqdm(desc="Processing video (while loop)", unit="frame")
         while True:
-            method_frame, header_frame, body = self.channel.basic_get(queue=last_queue, auto_ack=True)
-            if method_frame and body:
-
-                received_data = pickle.loads(body)
+            if not queue_in.empty():
+                received_data = queue_in.get()
                 if received_data != 'STOP':
                     y = received_data["data"]
                     y["layers_output"] = [t.to(self.device) if t is not None else None for t in y["layers_output"]]
