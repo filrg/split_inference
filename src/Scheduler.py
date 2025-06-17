@@ -117,7 +117,7 @@ class Scheduler:
     def last_layer(self, model, batch_frame, logger):
         previous_queue = f"intermediate_queue_{self.layer_id - 1}"
         queue_in = queue.Queue(maxsize=10)
-        t_send = threading.Thread(target=receiver_thread, args=(queue_in, previous_queue, self.channel,))
+        t_send = threading.Thread(target=receiver_thread, args=(queue_in, previous_queue,))
         t_send.daemon = True
         t_send.start()
 
@@ -148,7 +148,7 @@ class Scheduler:
                 else:
                     break
             else:
-                continue
+                time.sleep(0.01)
         pbar.close()
         logger.log_info(f"End Inference.")
         return time_inference
