@@ -70,8 +70,8 @@ class Scheduler:
                 self.send_next_layer(self.intermediate_queue, y, logger, compress)
                 break
             frame = cv2.resize(frame, (640, 640))
-            tensor = torch.from_numpy(frame).float().permute(2, 0, 1)  # shape: (3, 640, 640)
-            tensor /= 255.0
+            frame = frame.astype('float32') / 255.0
+            tensor = torch.from_numpy(frame).permute(2, 0, 1)  # shape: (3, 640, 640)
             input_image.append(tensor)
 
             if len(input_image) == batch_frame:
@@ -96,6 +96,8 @@ class Scheduler:
                 pbar.update(batch_frame)
             else:
                 continue
+        print(f'size message: {self.size_message} bytes.')
+        logger.log_info(f'size message: {self.size_message} bytes.')
         cap.release()
         pbar.close()
         logger.log_info(f"Finish Inference.")
@@ -212,6 +214,8 @@ class Scheduler:
         y = 'STOP'
         self.send_next_layer(self.intermediate_queue, y, logger, compress)
 
+        print(f'size message: {self.size_message} bytes.')
+        logger.log_info(f'size message: {self.size_message} bytes.')
         pbar.close()
         logger.log_info(f"End Inference.")
 
@@ -269,7 +273,7 @@ class Scheduler:
 
                             with open(label_path, "w") as f:
                                 for box, cls, conf in zip(boxes, classes, scores):
-                                    if conf < 0.1:  # lọc confidence thấp nếu muốn
+                                    if conf < 0.1:
                                         continue
                                     x1, y1, x2, y2 = box
                                     xc = (x1 + x2) / 2 / size[1]

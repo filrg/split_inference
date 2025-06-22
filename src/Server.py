@@ -8,7 +8,7 @@ import torch.nn as nn
 
 import src.Model
 import src.Log
-
+from ultralytics import YOLO
 
 class Server:
     def __init__(self, config):
@@ -80,10 +80,12 @@ class Server:
 
     def notify_clients(self):
         default_splits = {
-            "a": (10, [4, 6, 9]),
-            "b": (16, [9, 12, 15]),
-            "c": (22, [15, 18, 21])
+            "a": (4, [3]),
+            "b": (11, [4, 6, 10]),
+            "c": (17, [10, 13, 16]),
+            "d": (23, [16, 19, 22])
         }
+        model = YOLO(f"{self.model_name}.pt")
         splits = default_splits[self.cut_layer]
         file_path = f"{self.model_name}.pt"
         if os.path.exists(file_path):
