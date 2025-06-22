@@ -37,6 +37,9 @@ class Server:
 
         self.data = config["data"]
         self.debug_mode = config["debug-mode"]
+        self.compress = config["compress"]
+        self.cal_map = config["cal_map"]
+
         log_path = config["log-path"]
         self.logger = src.Log.Logger(f"{log_path}/app.log")
         self.logger.log_info(f"Application start. Server is waiting for {self.total_clients} clients.")
@@ -103,6 +106,8 @@ class Server:
                         "num_layers": len(self.total_clients),
                         "model_name": self.model_name,
                         "data": self.data,
-                        "debug_mode": self.debug_mode}
+                        "debug_mode": self.debug_mode,
+                        "compress": self.compress,
+                        "cal_map": self.cal_map}
 
             self.send_to_response(client_id, pickle.dumps(response))

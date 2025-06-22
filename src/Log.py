@@ -31,7 +31,7 @@ class Logger:
         self.logger.addHandler(file_handler)
 
     def log_info(self, message):
-        print(f"[INFO] {message}")
+        # print(f"[INFO] {message}")
         self.logger.info(message)
 
     def log_warning(self, message):

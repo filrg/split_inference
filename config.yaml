@@ -16,3 +16,9 @@ data: video.mp4
 log-path: .
 control-count: 10
 debug-mode: False
+compress:
+  enable: False
+  num_bit: 8
+cal_map:
+  enable: False
+  create_label: False
