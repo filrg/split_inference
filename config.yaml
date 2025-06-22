@@ -1,10 +1,10 @@
 name: YOLO
 server:
-  cut-layer: a #or b, c
+  cut-layer: a #or b, c, d
   clients:
     - 1
     - 1
-  model: yolov8n
+  model: yolo11n
   batch-frame: 1
 rabbit:
   address: 127.0.0.1
