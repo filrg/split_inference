@@ -120,8 +120,8 @@ def decode_quant_delta(buf):
         else:
             dtype = np.uint8 if num_bits == 8 else np.uint16
             itemsize = np.dtype(dtype).itemsize
-            q_changed = np.frombuffer(mv[idx:idx + num_changed * itemsize], dtype=dtype)
-            idx += num_changed * itemsize
+            q_changed = np.frombuffer(mv[idx:idx + int(num_changed * itemsize)], dtype=dtype)
+            idx += int(num_changed * itemsize)
 
         q_curr = q_prev.copy()
         q_curr[diff_bits.astype(bool)] = q_changed

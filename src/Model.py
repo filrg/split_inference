@@ -1,7 +1,3 @@
-import contextlib
-from copy import deepcopy
-from typing import Union, List
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -13,17 +9,11 @@ from ultralytics.utils import ops
 
 
 class SplitDetectionModel(nn.Module):
-    def __init__(self, cfg=YOLO('yolov8n.pt').model, split_layer=-1):
+    def __init__(self, cfg=YOLO('yolo11n.pt').model, split_layer=-1):
         super().__init__()
         self.model = cfg.model
         self.save = cfg.save
-        self.stride = cfg.stride
-        self.inplace = cfg.inplace
         self.names = cfg.names
-        self.yaml = cfg.yaml
-        self.nc = len(self.names)  # cfg.nc
-        self.task = cfg.task
-        self.pt = True
 
         if split_layer > 0:
             self.head = self.model[:split_layer]

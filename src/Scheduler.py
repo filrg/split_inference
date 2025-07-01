@@ -76,6 +76,7 @@ class Scheduler:
 
             if len(input_image) == batch_frame:
                 input_image = torch.stack(input_image)
+                logger.log_info(f'Start inference {batch_frame} frames.')
                 input_image = input_image.to(self.device)
                 # Prepare data
                 predictor.setup_source(input_image)
@@ -86,7 +87,6 @@ class Scheduler:
                 preprocess_image = predictor.preprocess(input_image)
 
                 # Head predict
-                logger.log_info(f'Start inference {batch_frame} frames.')
                 y = model.forward_head(preprocess_image, save_layers)
                 logger.log_info(f'End inference {batch_frame} frames.')
 
@@ -103,6 +103,8 @@ class Scheduler:
         logger.log_info(f"Finish Inference.")
 
     def last_layer(self, model, batch_frame, logger, compress):
+        num_last = 3
+        count = 0
         predictor = SplitDetectionPredictor(model, overrides={"imgsz": 640})
 
         model.eval()
@@ -136,11 +138,14 @@ class Scheduler:
 
                     pbar.update(batch_frame)
                 else:
-                    break
+                    count += 1
+                    if count == num_last:
+                        break
+                    continue
             else:
                 continue
         pbar.close()
-        logger.log_info(f"End Inference.")
+        logger.log_info(f"Finish Inference.")
 
     def middle_layer(self, model):
         pass
@@ -217,7 +222,7 @@ class Scheduler:
         print(f'size message: {self.size_message} bytes.')
         logger.log_info(f'size message: {self.size_message} bytes.')
         pbar.close()
-        logger.log_info(f"End Inference.")
+        logger.log_info(f"Finish Inference.")
 
     def check_last_layer(self, model, batch_frame, logger, compress, cal_map):
         image_dir = "frames/"
@@ -307,7 +312,7 @@ class Scheduler:
                 average = 0
             print(f"mAP@0.5:0.95: {average:.4f}")
             logger.log_info(f"mAP@0.5:0.95: {average:.4f}")
-        logger.log_info(f"End Inference.")
+        logger.log_info(f"Finish Inference.")
 
     def check_compress_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, cal_map):
         if self.layer_id == 1:
