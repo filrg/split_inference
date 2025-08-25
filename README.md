@@ -5,11 +5,11 @@ Application configuration is in the `config.yaml` file:
 ```yaml
 name: YOLO
 server:
-  cut-layer: a #or b, c
+  cut-layer: a #or b, c, d
   clients:
     - 1
     - 1
-  model: yolov8n
+  model: yolo11n
   batch-frame: 1
 rabbit:
   address: 127.0.0.1
@@ -21,6 +21,12 @@ data: video.mp4
 log-path: .
 control-count: 10
 debug-mode: False
+compress:
+  enable: False
+  num_bit: 8
+cal_map:
+  enable: False
+  create_label: False
 ```
 This configuration is use for server.
 
@@ -46,14 +52,3 @@ If you want to use a specific device configuration for the training process, dec
 python client.py --layer_id 1 --device cpu
 ```
 
-## Result
-Results include inference time, operating time, utilization. It locates in `result.log`.  
-```text
-2025-04-16 23:51:35,944 - my_logger - INFO - Start Inference
-2025-04-16 23:51:35,982 - my_logger - INFO - FPS input: 30.0
-2025-04-16 23:54:12,896 - my_logger - INFO - End Inference.
-2025-04-16 23:54:12,899 - my_logger - INFO - All time: 156.95556831359863s
-2025-04-16 23:54:12,900 - my_logger - INFO - Inference time: 152.65051984786987s
-2025-04-16 23:54:12,900 - my_logger - INFO - Utilization: 97.26 %
-
-```
