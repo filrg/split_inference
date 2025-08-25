@@ -145,13 +145,13 @@ def Encoder(data_output, num_bits=4):
     return encoded_data, shape_data
 
 def Decoder(encoded_data, shape_data):
-    decoder_data = []
+    decoded_data = []
     for i, output in enumerate(encoded_data):
         if output is None:
-            decoder_data.append(None)
+            decoded_data.append(None)
         else:
             shape = shape_data[i]
             data_decode = decode_quant_delta(output)
             data_decode = np.stack([arr.reshape(shape[1:]) for arr in data_decode])
-            decoder_data.append(data_decode)
-    return decoder_data
+            decoded_data.append(data_decode)
+    return decoded_data

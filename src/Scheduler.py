@@ -6,6 +6,7 @@ from src.Model import SplitDetectionPredictor
 from src.Compress import Encoder,Decoder
 from src.Utils import load_ground_truth, compute_map
 import os
+import copy
 
 class Scheduler:
     def __init__(self, client_id, layer_id, channel, device):
@@ -62,6 +63,8 @@ class Scheduler:
 
         fps = cap.get(cv2.CAP_PROP_FPS)
         path = None
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         pbar = tqdm(desc="Processing video (while loop)", unit="frame")
         while True:
             ret, frame = cap.read()
@@ -90,6 +93,13 @@ class Scheduler:
                 y = model.forward_head(preprocess_image, save_layers)
                 logger.log_info(f'End inference {batch_frame} frames.')
 
+                y["img_shape"] = preprocess_image.shape[2:]
+                y["orig_imgs_shape"] = input_image.shape[2:]
+                y["orig_imgs"] = copy.copy(input_image)
+
+                y["width"] = width
+                y["height"] = height
+
                 self.send_next_layer(self.intermediate_queue, y, logger, compress)
                 logger.log_info('Send a message.')
                 input_image = []
@@ -103,7 +113,7 @@ class Scheduler:
         logger.log_info(f"Finish Inference.")
 
     def last_layer(self, model, batch_frame, logger, compress):
-        num_last = 3
+        num_last = 1
         count = 0
         predictor = SplitDetectionPredictor(model, overrides={"imgsz": 640})
 
@@ -134,6 +144,21 @@ class Scheduler:
                     # Tail predict
                     logger.log_info(f'Start inference {batch_frame} frames.')
                     predictions = model.forward_tail(y)
+
+                    yolo_results = predictor.postprocess(predictions, y["img_shape"], y["orig_imgs_shape"],
+                                                         y["orig_imgs"])
+
+                    # for idx, result in enumerate(yolo_results):
+                    #     annotated_frame = result.plot()
+                    #
+                    #     # Hiển thị frame lên màn hình
+                    #     resized_frame = cv2.resize(annotated_frame, (y["width"], y["height"]))
+                    #     cv2.imshow("YOLOv8n - Object Detection", resized_frame)
+                    #
+                    # # Nhấn 'q' để thoát
+                    # if cv2.waitKey(1) & 0xFF == ord('q'):
+                    #     break
+
                     logger.log_info(f'End inference {batch_frame} frames.')
 
                     pbar.update(batch_frame)

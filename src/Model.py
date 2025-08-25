@@ -14,6 +14,12 @@ class SplitDetectionModel(nn.Module):
         self.model = cfg.model
         self.save = cfg.save
         self.names = cfg.names
+        self.stride = cfg.stride
+        self.inplace = cfg.inplace
+        self.yaml = cfg.yaml
+        self.nc = len(self.names)  # cfg.nc
+        self.task = cfg.task
+        self.pt = True
 
         if split_layer > 0:
             self.head = self.model[:split_layer]
@@ -75,28 +81,27 @@ class SplitDetectionPredictor(DetectionPredictor):
         model.fp16 = self.args.half
         self.model = model
 
-    def postprocess(self, preds, img, orig_imgs=None, path=None):
+    def postprocess(self, preds, img_shape=None, orig_shape=None, orig_imgs=None):
         """Post-processes predictions and returns a list of Results objects."""
-        """Choose the best bounding boxes from the output."""
-        preds = ops.non_max_suppression(preds,  # output from model
+        preds = ops.non_max_suppression(preds,
                                         self.args.conf,
                                         self.args.iou,
-                                        self.args.classes,
-                                        self.args.agnostic_nms,
+                                        agnostic=self.args.agnostic_nms,
                                         max_det=self.args.max_det,
-                                        nc=len(self.model.names),
-                                        )
+                                        classes=self.args.classes)
+
         if orig_imgs is not None and not isinstance(orig_imgs, list):  # input images are a torch.Tensor, not a list
             orig_imgs = ops.convert_torch2numpy_batch(orig_imgs)
 
-        return self.construct_results(preds, img, orig_imgs, path)
+        results = []
+        for i, pred in enumerate(preds):
+            if orig_imgs is None:
+                orig_img = np.empty([0, 0, 0, 0])
+                img_path = ""
+            else:
+                orig_img = orig_imgs[i]
+                img_path = ""
 
-    def construct_results(self, preds, img, orig_imgs, path):
-        return [
-            self.construct_result(pred, img, orig_img, img_path)
-            for pred, orig_img, img_path in zip(preds, orig_imgs, path)
-        ]
-
-    def construct_result(self, pred, img, orig_img, img_path):
-        pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
-        return Results(orig_img, path=img_path, names=self.model.names, boxes=pred[:, :6])
+            pred[:, :4] = ops.scale_boxes(img_shape, pred[:, :4], orig_shape)
+            results.append(Results(orig_img, path=img_path, names=self.model.names, boxes=pred))
+        return results
