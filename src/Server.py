@@ -8,7 +8,7 @@ import torch.nn as nn
 
 import src.Model
 import src.Log
-
+from ultralytics import YOLO
 
 class Server:
     def __init__(self, config):
@@ -37,6 +37,9 @@ class Server:
 
         self.data = config["data"]
         self.debug_mode = config["debug-mode"]
+        self.compress = config["compress"]
+        self.cal_map = config["cal_map"]
+
         log_path = config["log-path"]
         self.logger = src.Log.Logger(f"{log_path}/app.log")
         self.logger.log_info(f"Application start. Server is waiting for {self.total_clients} clients.")
@@ -77,10 +80,12 @@ class Server:
 
     def notify_clients(self):
         default_splits = {
-            "a": (10, [4, 6, 9]),
-            "b": (16, [9, 12, 15]),
-            "c": (22, [15, 18, 21])
+            "a": (4, [3]),
+            "b": (11, [4, 6, 10]),
+            "c": (17, [10, 13, 16]),
+            "d": (23, [16, 19, 22])
         }
+        model = YOLO(f"{self.model_name}.pt")
         splits = default_splits[self.cut_layer]
         file_path = f"{self.model_name}.pt"
         if os.path.exists(file_path):
@@ -103,6 +108,8 @@ class Server:
                         "num_layers": len(self.total_clients),
                         "model_name": self.model_name,
                         "data": self.data,
-                        "debug_mode": self.debug_mode}
+                        "debug_mode": self.debug_mode,
+                        "compress": self.compress,
+                        "cal_map": self.cal_map}
 
             self.send_to_response(client_id, pickle.dumps(response))

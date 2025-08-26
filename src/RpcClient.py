@@ -12,7 +12,7 @@ from src.Model import SplitDetectionModel
 from ultralytics import YOLO
 
 class RpcClient:
-    def __init__(self, client_id, layer_id, address, username, password, virtual_host, inference_func, device):
+    def __init__(self, client_id, layer_id, address, username, password, virtual_host, inference_func, check_compress_func, device):
         self.client_id = client_id
         self.layer_id = layer_id
         self.address = address
@@ -20,6 +20,7 @@ class RpcClient:
         self.password = password
         self.virtual_host = virtual_host
         self.inference_func = inference_func
+        self.check_compress_func = check_compress_func
         self.device = device
 
         self.channel = None
@@ -53,7 +54,11 @@ class RpcClient:
             batch_frame = self.response["batch_frame"]
             model = self.response["model"]
             data = self.response["data"]
+            compress = self.response["compress"]
+            cal_map = self.response["cal_map"]
+
             debug_mode = self.response["debug_mode"]
+
             self.logger = src.Log.Logger(f"result.log", debug_mode)
             if model is not None:
                 file_path = f'{model_name}.pt'
@@ -71,11 +76,12 @@ class RpcClient:
             self.model = SplitDetectionModel(pretrain_model, split_layer=splits)
             start = time.time()
             self.logger.log_info(f"Start Inference")
-            time_inference = self.inference_func(self.model, data, num_layers, save_layers, batch_frame, self.logger)
+            if cal_map["enable"] is False:
+                self.inference_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress)
+            else:
+                self.check_compress_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress, cal_map)
             all_time = time.time() - start
-            self.logger.log_info(f"All time: {all_time}s")
-            self.logger.log_info(f"Inference time: {time_inference}s")
-            self.logger.log_info(f"Utilization: {((time_inference / all_time) * 100):.2f} %")
+            src.Log.print_with_color(f"All time: {all_time}s", 'green')
             # Stop or Error
             return False
         else:

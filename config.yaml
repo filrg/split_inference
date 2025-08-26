@@ -1,10 +1,10 @@
 name: YOLO
 server:
-  cut-layer: a #or b, c
+  cut-layer: a #or b, c, d
   clients:
     - 1
     - 1
-  model: yolov8n
+  model: yolo11n
   batch-frame: 1
 rabbit:
   address: 127.0.0.1
@@ -16,3 +16,9 @@ data: video.mp4
 log-path: .
 control-count: 10
 debug-mode: False
+compress:
+  enable: False
+  num_bit: 8
+cal_map:
+  enable: False
+  create_label: False
