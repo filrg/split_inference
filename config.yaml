@@ -8,8 +8,8 @@ server:
   batch-frame: 1
 rabbit:
   address: 127.0.0.1
-  username: admin
-  password: admin
+  username: guest
+  password: guest
   virtual-host: /
 
 data: video.mp4

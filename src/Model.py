@@ -6,6 +6,8 @@ from ultralytics import YOLO
 from ultralytics.engine.results import Results
 from ultralytics.models.yolo.detect.predict import DetectionPredictor
 from ultralytics.utils import ops
+import os
+import yaml
 
 
 class SplitDetectionModel(nn.Module):
@@ -104,4 +106,43 @@ class SplitDetectionPredictor(DetectionPredictor):
 
             pred[:, :4] = ops.scale_boxes(img_shape, pred[:, :4], orig_shape)
             results.append(Results(orig_img, path=img_path, names=self.model.names, boxes=pred))
+        return results
+
+class BoundingBox(DetectionPredictor ):
+    def __init__(self , **kwargs):
+        super().__init__(**kwargs)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        coco_yaml_path = os.path.join(current_dir, "coco.yaml")
+        with open(coco_yaml_path, "r") as f:
+            data = yaml.safe_load(f)
+        self.names = data["names"]
+
+    def postprocess(self, preds, resized_shape=None, orig_shape=None, orig_imgs=None):
+        preds = ops.non_max_suppression(preds,
+                                        self.args.conf,
+                                        self.args.iou,
+                                        agnostic=self.args.agnostic_nms,
+                                        max_det=self.args.max_det,
+                                        classes=self.args.classes)
+
+        if orig_imgs is not None and not isinstance(orig_imgs, list):  # input images are a torch.Tensor, not a list
+            orig_imgs = ops.convert_torch2numpy_batch(orig_imgs)
+
+        results = []
+        for i, pred in enumerate(preds):
+            if orig_imgs is None:
+                orig_img = np.empty([0, 0, 0, 0])
+                img_path = ""
+            else:
+                orig_img = orig_imgs[i]
+                img_path = ""
+            scaled_preds = pred.clone()
+            scaled_preds[:, :4] = ops.scale_boxes(
+                resized_shape,
+                scaled_preds[:, :4],
+                orig_img.shape
+            )
+            results_sub = Results(orig_img=orig_img, path="", names=self.names, boxes=scaled_preds)
+            results.append(results_sub)
+
         return results
