@@ -143,7 +143,7 @@ row_buffer = {}
 def write_partial(partial_data, flush=False):
     global row_buffer, cols
 
-    # don't run if not exist csv file
+    # exist output.csv = run this function
     update_csv_header(file_path ,cols)
 
     row_buffer.update(partial_data)
