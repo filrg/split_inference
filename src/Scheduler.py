@@ -18,60 +18,152 @@ class Scheduler:
         self.channel.queue_declare(self.intermediate_queue, durable=False)
         self.size_message = None
 
-    def send_next_layer(self, intermediate_queue, data, logger, compress):
-        if data != 'STOP':
-            if compress["enable"]:
-                data["layers_output"] = [t.cpu().numpy() if isinstance(t, torch.Tensor) else None for t in
-                                         data["layers_output"]]
-                logger.log_info(f'Start Encode.')
-                data["layers_output"], data["shape"] = Encoder(data_output=data["layers_output"], num_bits=compress["num_bit"])
-                logger.log_info(f'End Encode.')
-            else:
-                data["layers_output"] = [t.cpu() if isinstance(t, torch.Tensor) else None for t in
-                                         data["layers_output"]]
-            message = pickle.dumps({
-                "action": "OUTPUT",
-                "data": data
-            })
-            if self.size_message is None:
-                self.size_message = len(message)
+        self.bbox_queue = "bbox_queue"
+        self.ori_img_queue = "ori_img_queue"
 
+    def send_next_layer(self, intermediate_queue, data, logger, compress,  signal = 'CONTINUE'):
+        try :
+            if signal != 'STOP':
+                if compress["enable"]:
+                    data["layers_output"] = [t.cpu().numpy() if isinstance(t, torch.Tensor) else None for t in
+                                             data["layers_output"]]
+                    logger.log_info(f'Start Encode.')
+                    data["layers_output"], data["shape"] = Encoder(data_output=data["layers_output"],
+                                                                   num_bits=compress["num_bit"])
+                    logger.log_info(f'End Encode.')
+                else:
+                    data["layers_output"] = [t.cpu() if isinstance(t, torch.Tensor) else None for t in
+                                             data["layers_output"]]
+                message = pickle.dumps({
+                    "action": "OUTPUT",
+                    "data": data
+                })
+                if self.size_message is None:
+                    self.size_message = len(message)
+
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=intermediate_queue,
+                    body=message,
+                )
+            else:
+                message = pickle.dumps(data)
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=intermediate_queue,
+                    body=message,
+                )
+        except Exception as e:
+            logger.log_error(f"Frame {frame_index}: Failed to send data to next layer. Error: {e}")
+    def send_to_tracker(self, tracker_queue, predictions, frame_index, logger, signal='CONTINUE'):
+    # send bounding box to tracker
+        try:
+            if signal != 'STOP':
+                if not isinstance(predictions, (list, tuple)) or len(predictions) == 0 or not isinstance(predictions[0],
+                                                                                                         torch.Tensor):
+                    logger.log_warning(
+                        f"Frame {frame_index}: Invalid prediction format received. Skipping send to tracker.")
+                    return
+
+                prediction_tensor = predictions[0]
+                prediction_tensor_cpu = prediction_tensor.cpu()
+
+                message_to_tracker = {
+                    "predictions": prediction_tensor_cpu,
+                    "frame_index": frame_index
+                }
+            else:
+                message_to_tracker = 'STOP'
+
+            message_bytes = pickle.dumps(message_to_tracker)
             self.channel.basic_publish(
                 exchange='',
-                routing_key=intermediate_queue,
-                body=message,
+                routing_key=tracker_queue,
+                body=message_bytes
             )
-        else:
-            message = pickle.dumps(data)
+        except Exception as e:
+            logger.log_error(f"Frame {frame_index}: Failed to send data to tracker. Error: {e}")
+
+    def send_ori_img(self, tracker_queue, frame_to_send, frame_index, orig_img_size, logger, total_frames=-1,
+                     signal='CONTINUE'):
+    # send origin images to tracker
+        try:
+            if signal != 'STOP':
+                message = {
+                    "ori_img": frame_to_send,
+                    "frame_index": frame_index,
+                    "orig_img_size": orig_img_size,
+                    "total_frames": total_frames
+                }
+            else:
+                message = 'STOP'
+
+            message_bytes = pickle.dumps(message)
             self.channel.basic_publish(
                 exchange='',
-                routing_key=intermediate_queue,
-                body=message,
+                routing_key=tracker_queue,
+                body=message_bytes
             )
+        except Exception as e:
+            logger.log_error(f"Frame {frame_index}: Failed to send data to tracker. Error: {e}")
+
+    def get_total_frames(self, video_path):
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise Exception("Cannot open video file")
+
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
+        return total_frames
 
     def first_layer(self, model, data, save_layers, batch_frame, logger, compress):
         input_image = []
         predictor = SplitDetectionPredictor(model, overrides={"imgsz": 640})
 
+        frame_index = 1
+        self.channel.queue_declare(queue=self.ori_img_queue, durable=False)
+        self.channel.basic_qos(prefetch_count=50)
+
         model.eval()
         model.to(self.device)
         video_path = data
         cap = cv2.VideoCapture(video_path)
+
+        total_frames = self.get_total_frames(video_path)
+
         if not cap.isOpened():
             logger.log_error(f"Not open video")
             return False
 
         fps = cap.get(cv2.CAP_PROP_FPS)
+        logger.log_info(f"FPS input: {fps}")
+
         path = None
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         pbar = tqdm(desc="Processing video (while loop)", unit="frame")
         while True:
             ret, frame = cap.read()
-            if not ret:
+            # send origin frame
+            if not ret or frame is None:
                 y = 'STOP'
-                self.send_next_layer(self.intermediate_queue, y, logger, compress)
+                self.send_next_layer(self.intermediate_queue, y, logger, compress , signal='STOP')
+                self.send_ori_img(self.ori_img_queue, y, frame_index, (0, 0), logger, signal='STOP')
                 break
+
+            # make border
+            h, w, c = frame.shape
+            size = max(h, w)
+            orig_img_size = (h, w)
+            if h > w:
+                border_size = h - w
+                frame = cv2.copyMakeBorder(frame, 0, 0, 0, border_size, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+            else:
+                border_size = w - h
+                frame = cv2.copyMakeBorder(frame, 0, border_size, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+
+            self.send_ori_img(self.ori_img_queue, frame, frame_index, orig_img_size, logger, total_frames)
+
             frame = cv2.resize(frame, (640, 640))
             frame = frame.astype('float32') / 255.0
             tensor = torch.from_numpy(frame).permute(2, 0, 1)  # shape: (3, 640, 640)
@@ -104,6 +196,7 @@ class Scheduler:
                 logger.log_info('Send a message.')
                 input_image = []
                 pbar.update(batch_frame)
+                frame_index += 1
             else:
                 continue
         print(f'size message: {self.size_message} bytes.')
@@ -115,6 +208,7 @@ class Scheduler:
     def last_layer(self, model, batch_frame, logger, compress):
         num_last = 1
         count = 0
+        frame_index = 1
         predictor = SplitDetectionPredictor(model, overrides={"imgsz": 640})
 
         model.eval()
@@ -122,6 +216,11 @@ class Scheduler:
         last_queue = f"intermediate_queue_{self.layer_id - 1}"
         self.channel.queue_declare(queue=last_queue, durable=False)
         self.channel.basic_qos(prefetch_count=50)
+
+        self.channel.queue_declare(queue=self.bbox_queue, durable=False)
+        self.channel.basic_qos(prefetch_count=50)
+
+
         pbar = tqdm(desc="Processing video (while loop)", unit="frame")
         while True:
             method_frame, header_frame, body = self.channel.basic_get(queue=last_queue, auto_ack=True)
@@ -144,6 +243,8 @@ class Scheduler:
                     # Tail predict
                     logger.log_info(f'Start inference {batch_frame} frames.')
                     predictions = model.forward_tail(y)
+                    self.send_to_tracker(self.bbox_queue, predictions, frame_index, logger)
+                    frame_index += 1
 
                     yolo_results = predictor.postprocess(predictions, y["img_shape"], y["orig_imgs_shape"],
                                                          y["orig_imgs"])
@@ -163,6 +264,7 @@ class Scheduler:
 
                     pbar.update(batch_frame)
                 else:
+                    self.send_to_tracker(self.bbox_queue, 'STOP', frame_index, logger, 'STOP')
                     count += 1
                     if count == num_last:
                         break
@@ -242,7 +344,7 @@ class Scheduler:
             pbar.update(batch_frame)
 
         y = 'STOP'
-        self.send_next_layer(self.intermediate_queue, y, logger, compress)
+        self.send_next_layer(self.intermediate_queue, y, logger, compress, 'STOP')
 
         print(f'size message: {self.size_message} bytes.')
         logger.log_info(f'size message: {self.size_message} bytes.')

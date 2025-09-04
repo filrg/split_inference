@@ -12,7 +12,7 @@ rabbit:
   password: admin
   virtual-host: /
 
-data: video.mp4
+data: video.avi
 log-path: .
 control-count: 10
 debug-mode: False

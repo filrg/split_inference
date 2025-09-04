@@ -5,28 +5,22 @@ Application configuration is in the `config.yaml` file:
 ```yaml
 name: YOLO
 server:
-  cut-layer: a #or b, c, d
+  cut-layer: a #or b, c
   clients:
     - 1
     - 1
-  model: yolo11n
+  model: yolov8n
   batch-frame: 1
 rabbit:
   address: 127.0.0.1
-  username: admin
-  password: admin
+  username: guest
+  password: guest
   virtual-host: /
 
 data: video.mp4
 log-path: .
 control-count: 10
 debug-mode: False
-compress:
-  enable: False
-  num_bit: 8
-cal_map:
-  enable: False
-  create_label: False
 ```
 This configuration is use for server.
 
@@ -44,6 +38,14 @@ Now, when server is ready, run clients simultaneously with total number of clien
 ```commandline
 python client.py --layer_id 1 
 ```
+
+### Tracker
+
+**Tracker**
+
+```commandline
+python tracker.py
+```
 Where:
 - `--layer_id` is the ID index of client's layer, start from 1.
 
@@ -52,3 +54,24 @@ If you want to use a specific device configuration for the training process, dec
 python client.py --layer_id 1 --device cpu
 ```
 
+## Result
+
+- You can check output at [`output.csv`](https://github.com/ntuanh/split_inference/blob/enhance-visual/output.csv).
+
+Results include inference time, operating time, utilization. It locates in `result.log`.  
+```text
+2025-04-16 23:51:35,944 - my_logger - INFO - Start Inference
+2025-04-16 23:51:35,982 - my_logger - INFO - FPS input: 30.0
+2025-04-16 23:54:12,896 - my_logger - INFO - End Inference.
+2025-04-16 23:54:12,899 - my_logger - INFO - All time: 156.95556831359863s
+2025-04-16 23:54:12,900 - my_logger - INFO - Inference time: 152.65051984786987s
+2025-04-16 23:54:12,900 - my_logger - INFO - Utilization: 97.26 %
+
+```
+- Commands for rabbitMQ problems :
+```text
+sudo docker stop rabbitmq
+sudo docker rm rabbitmq
+sudo docker ps
+sudo docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 -v ${PWD}/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf rabbitmq:3-management
+```
