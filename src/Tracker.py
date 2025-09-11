@@ -48,48 +48,55 @@ class Tracker:
         self.bbox_stream_stopped = False
 
         self.fps = 30
-        self.start_receive_bounding_box = 0
-        self.start_receive_origin_image = 0
-
         self.orig_img_size = (0 , 0)
 
         self.dict_data = {
-            "[T]totalTm" : 0
-            ,"[T]totalFr" : 0
-            ,"[T]TmRecv" : 0
-            ,"[T]FRPS" : 0
-            ,"[T]Fr/~1s" : -1
-            ,"[T]Fr/~2s" : -1
-            ,"[T]Fr/~3s" : -1
+            "Time" : -1
+            ,"PointCut" : config["server"]["cut-layer"]
+            ,"[T]totalTM" : -1
+            ,"[T]FPSR" : -1
+            ,"[1]totalFr" : -1
+            ,"[1]totalTm" : -1
+            ,"[2]totalTm" : -1
+            ,"[1]outSize" : -1
+            ,"[2]outSize" : -1
         }
 
-        self.time_start_received = time.time()
         print("Time start received :")
-        self.show_datetime()
-        self.total_frames = 0
+        print(self.get_datatime(millisecond=True))
         self.digits = 5
 
         self.prev_frame = time.time()
         self.prev_imshow = time.time()
-        self.lst_time = [0]
-        self.lst_delay = []
-
-        self.num_testbed = 2
-        self.frame_received = 0
-        self.frame_start = 0
         self.task_display = threading.Thread(target=self.display)
         self.check_display = False
 
         self.fps_display = []
+
+        # frame
+        self.total_frames = 0
         self.frame_showed = 0
+        self.frame_received = 0
+        self.frame_start = 0
+        self.frame_for_1st = -1
+        self.frame_for_2nd = -1
+        self.frame_for_3rd = -1
 
+        # fps
+        self.fps_mean = -1
 
+        # time
+        self.start_time =  -1
+        self.time_start_received = time.time()
+        self.time_start_display = 0
 
     def _declare_queues(self):
         self.channel.queue_declare(queue=self.bbox_queue, durable=False)
         self.channel.queue_declare(queue=self.ori_img_queue, durable=False)
 
     def _image_callback(self, ch, method, properties, body):
+        """ get image , frame and origin image size from client 1 .
+        save image to queue ."""
         try:
             message = pickle.loads(body)
             if message == 'STOP':
@@ -98,35 +105,23 @@ class Tracker:
                 self.image_stream_stopped = True
                 return
 
-            frame_index = message.get("frame_index")
+            # frame_index = message.get("frame_index")
             frame = message.get("ori_img")
             total_frames = message.get("total_frames")
 
-            # print(f"[Frame index] from client 1 : {frame_index}")
-
             if total_frames != -1 :
-                self.dict_data["[T]totalFr"] = total_frames
                 self.total_frames = total_frames
-                if self.frame_start == -1 :
-                    self.frame_start = total_frames
             self.orig_img_size = message.get("orig_img_size")
-
-            if frame_index == 0:
-                self.start_receive_origin_image = time.time()
-
-            # print(f"--- [Received Image] Frame Index: {frame_index} ---")
-            self.image_buffer[frame_index] = frame
 
             # just use only queue
             self.image_buffer_queue.put(frame)
             self.handle_data()
 
-            # if frame_index in self.bbox_buffer:
-            #     self._process_pair(frame_index)
         finally:
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def _bbox_callback(self, ch, method, properties, body):
+        """ get result and frame index from client 2 """
         try:
             message = pickle.loads(body)
             if message == 'STOP':
@@ -134,25 +129,12 @@ class Tracker:
                 self.bbox_stream_stopped = True
                 return
 
-            frame_index = message.get("frame_index")
+            # frame_index = message.get("frame_index")
             predictions = message.get("predictions")
-
-            # print(f"[Frame index] from client 2 : {frame_index}")
-
-            if frame_index == 0:
-                self.start_receive_bounding_box = time.time()
-
-            # print(f"--- [Received BBox] Frame Index: {frame_index} ---")
-            # print(f"[Predictions] check type {type(predictions)}")
-            self.bbox_buffer[frame_index] = predictions
 
             # handle by just only queue
             self.bbox_buffer_queue.put(predictions)
             self.handle_data()
-
-            # if frame_index in self.image_buffer:
-            #     self._process_pair(frame_index)
-
         finally:
             ch.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -162,7 +144,7 @@ class Tracker:
         self.channel.basic_consume(queue=self.bbox_queue, on_message_callback=self._bbox_callback, auto_ack=False)
 
         print("[Tracker] Listening for confirmation... Press Ctrl+C to exit.")
-        start_time = time.time()
+        self.start_time = time.time()
         self.prev_frame = time.time()
 
         while not (self.image_stream_stopped and self.bbox_stream_stopped):
@@ -170,13 +152,12 @@ class Tracker:
                 break
             self.connection.process_data_events(time_limit=1)
 
-        total_time = time.time() - start_time
+        total_time = time.time() - self.start_time
         print(f"[Tracker][Time] total time: {total_time:.2f}s")
-        self.dict_data["[T]totalTm"] = round(total_time , self.digits)
-
         print("\n[Tracker] All streams stopped. Loop finished.")
 
     def run(self):
+        self.start_time = time.time()
         try:
             self.start_listening()
             self.task_display.join()
@@ -187,38 +168,22 @@ class Tracker:
             self.cleanup()
 
     def cleanup(self):
-        # self.visual_time(self.lst_time , "Received")
-        # self.visual_time(self.lst_time, "Imshow")
-        self.dict_data["[T]TmRecv"] = round(time.time() - self.time_start_received , self.digits)
-        self.dict_data["[T]FRPS"] = round(sum(self.fps_display) / len(self.fps_display) , self.digits)
+        self.data_for_csv()
         write_partial(self.dict_data)
-
         print(f"[Frame showed ] {self.frame_showed}")
-
         print("[Tracker] Cleaning up...")
         if self.connection and self.connection.is_open:
             self.connection.close()
             cv2.destroyAllWindows()
             print("[Tracker] Connection closed.")
 
-    def _process_pair(self, frame_index):
-        if self.frame_received == self.frame_start - 1 :
-            print(f"[Frame received] : {self.frame_received}")
-            print(f"[Frame start ] : {self.frame_start}")
-            self.dict_data["[T]totalFr"] = self.total_frames
-
-            display = False
-            if display:
-                # t_b = threading.Thread(target=self.display)
-                # t_b.start()
-                t_display = threading.Thread(target=self.display, daemon=True)
-                t_display.start()
-                self.display()
-        else :
-            self.frame_received += 1
-
     def display(self):
-        while self.image_buffer_queue.qsize() != 0  and self.bbox_buffer_queue.qsize() != 0:
+        while (self.image_buffer_queue.qsize() != 0  and self.bbox_buffer_queue.qsize() != 0) or self.frame_showed < self.total_frames:
+            if self.frame_showed == 0 :
+                self.time_start_display = time.time()
+            if self.frame_showed == self.total_frames - 1:
+                print("Estimating fps mean !")
+                self.fps_mean = round(self.total_frames/(time.time() - self.time_start_display),self.digits)
             predictor = BoundingBox()
             origin_frame_test = self.image_buffer_queue.get()
             raw_prediction_tensor = self.bbox_buffer_queue.get()
@@ -232,7 +197,6 @@ class Tracker:
                 orig_shape=origin_frame_shape[:2],
                 orig_imgs=orig_imgs_list
             )
-
             if results:
                 final_result = results[0]
                 annotated_image = final_result.plot()
@@ -279,45 +243,25 @@ class Tracker:
 
         if (self.frame_start != 0 and self.frame_received == self.frame_start) and self.check_display == False:
             print("Start show output at frame ", self.frame_received)
-            self.task_display.start()
             self.check_display = True
+            self.task_display.start()
 
         now = time.time()
-        # if self.dict_data["[T]Fr/~1s"] == -1 and self.frame_received == 10:
-        #     self.show_datetime()
-        #     temp_time = round(now - self.time_start_received , self.digits)
-        #     print(f"[Frame for 1st ] {temp_time}")
-        #     self.dict_data["[T]Fr/~1s"] = temp_time
-        # if self.dict_data["[T]Fr/~2s"] == -1 and self.frame_received == 20:
-        #     self.show_datetime()
-        #     temp_time = round(now - self.time_start_received, self.digits)
-        #     print(f"[Frame for 2nd ] {temp_time}")
-        #     self.dict_data["[T]Fr/~2s"] = temp_time
-        # if self.dict_data["[T]Fr/~3s"] == -1 and self.frame_received == 30:
-        #     self.show_datetime()
-        #     temp_time = round(now - self.time_start_received, self.digits)
-        #     print(f"[Frame for 3rd ] {temp_time}")
-        #     self.dict_data["[T]Fr/~3s"] = temp_time
-        #     fps_reallity = 20 // (self.dict_data["[T]Fr/~3s"] - self.dict_data["[T]Fr/~1s"])
-        #     self.frame_start = int((self.fps - fps_reallity) * self.total_frames // self.fps)
-        #     print(f"[Frame start] {self.frame_start}")
-        if self.dict_data["[T]Fr/~1s"] == -1 and (now - self.time_start_received) >= 1:
-            self.show_datetime()
+
+        if self.frame_for_1st == -1 and (now - self.time_start_received) >= 1:
             print(f"[Frame for 1st ] {self.frame_received}")
-            self.dict_data["[T]Fr/~1s"] = self.frame_received
-        if self.dict_data["[T]Fr/~2s"] == -1 and (now - self.time_start_received) >= 2:
-            self.show_datetime()
+            self.frame_for_1st = self.frame_received
+        if self.frame_for_2nd == -1 and (now - self.time_start_received) >= 2:
             print(f"[Frame for 2nd ] {self.frame_received}")
-            self.dict_data["[T]Fr/~2s"] = self.frame_received
-        if self.dict_data["[T]Fr/~3s"] == -1 and (now - self.time_start_received) >= 3:
-            self.show_datetime()
+            self.frame_for_2nd = self.frame_received
+        if self.frame_for_3rd == -1 and (now - self.time_start_received) >= 3:
             print(f"[Frame for 3rd ] {self.frame_received}")
-            self.dict_data["[T]Fr/~3s"] = self.frame_received
-            fps_reallity = (self.dict_data["[T]Fr/~3s"] - self.dict_data["[T]Fr/~1s"])//2
+            self.frame_for_3rd = self.frame_received
+            fps_reallity = (self.frame_for_3rd - self.frame_for_1st)//2
             self.frame_start = int((self.fps - fps_reallity) * self.total_frames // self.fps)
             print(f"[Frame start] {self.frame_start}")
 
-    def show_datetime(self):
+    def get_datatime(self , millisecond = False):
         now = datetime.now()
 
         # Extract hour, minute, second, millisecond
@@ -326,4 +270,21 @@ class Tracker:
         second = now.second
         millisecond = now.microsecond // 1000  # convert microseconds → milliseconds
 
-        print(f"{hour}:{minute}:{second}.{millisecond}")
+        if millisecond :
+            return f"{hour}:{minute}:{second}.{millisecond}"
+        else :
+            return f"{hour}:{minute}:{second}"
+
+    def data_for_csv(self):
+        self.dict_data["Time"] = self.get_datatime(millisecond=False)
+        # self.dict_data["PointCut"]
+
+        self.dict_data["[T]totalTM"] = round(time.time() - self.start_time , self.digits)
+        self.dict_data["[T]FPSR"] = self.fps_mean
+
+        self.dict_data["[1]totalFr"] = self.total_frames
+        self.dict_data["[1]totalTm"] = -1
+        self.dict_data["[1]outSize"] = -1
+
+        self.dict_data["[2]totalTm"] = -1
+        self.dict_data["[2]outSize"] = -1

@@ -246,20 +246,6 @@ class Scheduler:
                     self.send_to_tracker(self.bbox_queue, predictions, frame_index, logger)
                     frame_index += 1
 
-                    yolo_results = predictor.postprocess(predictions, y["img_shape"], y["orig_imgs_shape"],
-                                                         y["orig_imgs"])
-
-                    # for idx, result in enumerate(yolo_results):
-                    #     annotated_frame = result.plot()
-                    #
-                    #     # Hiển thị frame lên màn hình
-                    #     resized_frame = cv2.resize(annotated_frame, (y["width"], y["height"]))
-                    #     cv2.imshow("YOLOv8n - Object Detection", resized_frame)
-                    #
-                    # # Nhấn 'q' để thoát
-                    # if cv2.waitKey(1) & 0xFF == ord('q'):
-                    #     break
-
                     logger.log_info(f'End inference {batch_frame} frames.')
 
                     pbar.update(batch_frame)
