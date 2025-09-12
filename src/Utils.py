@@ -130,9 +130,9 @@ def load_ground_truth(label_dir, image_dir):
 """ write to csv file """
 
 cols = [
-    "Time" , "PointCut" ,
+    "Time" , "PointCut" , "TmQoE"
     "[T]totalTM" , "[T]FPSR" ,
-    "[1]totalFr" , "[1]totalTm", "[1]outSize" ,
+    "[1]totalFr" , "[1]totalTm", "[1]outSze[T]" , "[1]outSze[2]" ,
     "[2]totalTm" , "[2]outSize"
 ]
 
@@ -185,3 +185,14 @@ def update_csv_header(filename, new_headers):
     with open(filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerows(reader)
+
+def format_size(size_bytes):
+    if size_bytes == 0:
+        return "0 B"
+    units = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    size = float(size_bytes)
+    while size >= 1024 and i < len(units) - 1:
+        size /= 1024
+        i += 1
+    return f"{size:.1f} {units[i]}"

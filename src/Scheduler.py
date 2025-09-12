@@ -4,9 +4,11 @@ import torch
 import cv2
 from src.Model import SplitDetectionPredictor
 from src.Compress import Encoder,Decoder
-from src.Utils import load_ground_truth, compute_map
+from src.Utils import load_ground_truth, compute_map , format_size
 import os
 import copy
+import time
+
 
 class Scheduler:
     def __init__(self, client_id, layer_id, channel, device):
@@ -16,10 +18,13 @@ class Scheduler:
         self.device = device
         self.intermediate_queue = f"intermediate_queue_{self.layer_id}"
         self.channel.queue_declare(self.intermediate_queue, durable=False)
-        self.size_message = None
 
         self.bbox_queue = "bbox_queue"
         self.ori_img_queue = "ori_img_queue"
+
+        self.size_mess_cl1_2_tracker = -1
+        self.size_mess_cl1_2_cl2 = -1
+        self.size_mess_cl2_2_tracker = -1 
 
     def send_next_layer(self, intermediate_queue, data, logger, compress,  signal = 'CONTINUE'):
         try :
@@ -38,8 +43,8 @@ class Scheduler:
                     "action": "OUTPUT",
                     "data": data
                 })
-                if self.size_message is None:
-                    self.size_message = len(message)
+                if self.size_mess_cl1_2_cl2 == - 1:
+                    self.size_mess_cl1_2_cl2 = len(message)
 
                 self.channel.basic_publish(
                     exchange='',
@@ -55,8 +60,9 @@ class Scheduler:
                 )
         except Exception as e:
             logger.log_error(f"Frame {frame_index}: Failed to send data to next layer. Error: {e}")
-    def send_to_tracker(self, tracker_queue, predictions, frame_index, logger, signal='CONTINUE'):
-    # send bounding box to tracker
+    def send_to_tracker(self, tracker_queue, predictions, frame_index, logger, signal='CONTINUE' ,
+                        total_time = -1 ):
+    # send bounding box to tracker from client 2 to tracker
         try:
             if signal != 'STOP':
                 if not isinstance(predictions, (list, tuple)) or len(predictions) == 0 or not isinstance(predictions[0],
@@ -72,10 +78,18 @@ class Scheduler:
                     "predictions": prediction_tensor_cpu,
                     "frame_index": frame_index
                 }
+                if self.size_mess_cl2_2_tracker == -1 :
+                    self.size_mess_cl2_2_tracker = len(message_to_tracker)
+
             else:
-                message_to_tracker = 'STOP'
+                message_to_tracker = {
+                    'signal' : 'STOP' ,
+                    'total_time' : total_time ,
+                    'size_mess2tracker' : format_size(self.size_mess_cl2_2_tracker)
+                }
 
             message_bytes = pickle.dumps(message_to_tracker)
+
             self.channel.basic_publish(
                 exchange='',
                 routing_key=tracker_queue,
@@ -85,20 +99,28 @@ class Scheduler:
             logger.log_error(f"Frame {frame_index}: Failed to send data to tracker. Error: {e}")
 
     def send_ori_img(self, tracker_queue, frame_to_send, frame_index, orig_img_size, logger, total_frames=-1,
-                     signal='CONTINUE'):
-    # send origin images to tracker
+                     signal='CONTINUE' , total_time = -1 ):
+    # send origin images from client 1 to tracker
         try:
             if signal != 'STOP':
                 message = {
                     "ori_img": frame_to_send,
                     "frame_index": frame_index,
                     "orig_img_size": orig_img_size,
-                    "total_frames": total_frames
+                    "total_frames": total_frames,
                 }
             else:
-                message = 'STOP'
+                message = {
+                    "signal" : 'STOP',
+                    "total_time" : total_time,
+                    "size_mess2tracker" : format_size(self.size_mess_cl1_2_tracker),
+                    "size_mess2cl2" : format_size(self.size_mess_cl1_2_cl2)
+                }
+
 
             message_bytes = pickle.dumps(message)
+            if self.size_mess_cl1_2_tracker == -1 :
+                self.size_mess_cl1_2_tracker = len(message_bytes)
             self.channel.basic_publish(
                 exchange='',
                 routing_key=tracker_queue,
@@ -117,6 +139,7 @@ class Scheduler:
         return total_frames
 
     def first_layer(self, model, data, save_layers, batch_frame, logger, compress):
+        start_time = time.time()
         input_image = []
         predictor = SplitDetectionPredictor(model, overrides={"imgsz": 640})
 
@@ -147,8 +170,10 @@ class Scheduler:
             # send origin frame
             if not ret or frame is None:
                 y = 'STOP'
+                total_time = time.time() - start_time
                 self.send_next_layer(self.intermediate_queue, y, logger, compress , signal='STOP')
-                self.send_ori_img(self.ori_img_queue, y, frame_index, (0, 0), logger, signal='STOP')
+                self.send_ori_img(self.ori_img_queue, y, frame_index, (0, 0), logger, signal='STOP' ,
+                                  total_time= total_time)
                 break
 
             # make border
@@ -199,17 +224,18 @@ class Scheduler:
                 frame_index += 1
             else:
                 continue
-        print(f'size message: {self.size_message} bytes.')
-        logger.log_info(f'size message: {self.size_message} bytes.')
+        print(f'size message: {self.size_mess_cl1_2_cl2} bytes.')
+        logger.log_info(f'size message: {self.size_mess_cl1_2_cl2} bytes.')
         cap.release()
         pbar.close()
         logger.log_info(f"Finish Inference.")
 
+
     def last_layer(self, model, batch_frame, logger, compress):
+        start_time = time.time()
         num_last = 1
         count = 0
         frame_index = 1
-        predictor = SplitDetectionPredictor(model, overrides={"imgsz": 640})
 
         model.eval()
         model.to(self.device)
@@ -250,7 +276,8 @@ class Scheduler:
 
                     pbar.update(batch_frame)
                 else:
-                    self.send_to_tracker(self.bbox_queue, 'STOP', frame_index, logger, 'STOP')
+                    total_time = time.time() - start_time
+                    self.send_to_tracker(self.bbox_queue, 'STOP', frame_index, logger, 'STOP', total_time)
                     count += 1
                     if count == num_last:
                         break
@@ -332,8 +359,8 @@ class Scheduler:
         y = 'STOP'
         self.send_next_layer(self.intermediate_queue, y, logger, compress, 'STOP')
 
-        print(f'size message: {self.size_message} bytes.')
-        logger.log_info(f'size message: {self.size_message} bytes.')
+        print(f'size message: {self.size_mess_cl1_2_cl2} bytes.')
+        logger.log_info(f'size message: {self.size_mess_cl1_2_cl2} bytes.')
         pbar.close()
         logger.log_info(f"Finish Inference.")
 
