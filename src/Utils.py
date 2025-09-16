@@ -130,7 +130,7 @@ def load_ground_truth(label_dir, image_dir):
 """ write to csv file """
 
 cols = [
-    "Time" , "PointCut" , "TmQoE"
+    "Time" , "PointCut" ,
     "[T]totalTM" , "[T]FPSR" ,
     "[1]totalFr" , "[1]totalTm", "[1]outSze[T]" , "[1]outSze[2]" ,
     "[2]totalTm" , "[2]outSize"
