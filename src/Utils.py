@@ -6,6 +6,7 @@ import numpy as np
 import cv2
 import pandas as pd
 import csv
+import yaml
 
 
 def delete_old_queues(address, username, password, virtual_host):
@@ -196,3 +197,97 @@ def format_size(size_bytes):
         size /= 1024
         i += 1
     return f"{size:.1f} {units[i]}"
+
+def get_layer_output(cut_point , yaml_file = "cfg/yolo11n.yaml"):
+    """
+    Parse YOLO config YAML and return list of 'from' indices for all layers.
+    """
+    with open(yaml_file, "r") as f:
+        config = yaml.safe_load(f)
+
+    res = [cut_point - 1]
+    from_idx = []
+    # backbone and head sections
+    for section in ["backbone", "head"]:
+        for i, layer in enumerate(config.get(section, [])):
+            from_idx.append(layer[0])
+
+    # return from_idx
+
+    for i in range(cut_point , len(from_idx)):
+        # print(type(from_idx[0]))
+        if isinstance(from_idx[i] , list):
+            for j in from_idx[i]:
+                if j != -1 and j not in res and j < cut_point :
+                    res.append(j)
+    res.sort()
+    return tuple((cut_point , res))
+
+def get_output_sizes(cfg_path, img_size=(640, 640)):
+    """
+    Estimate output tensor sizes (MB) for each layer defined in YOLOv11 YAML.
+    - Works without torch.
+    - Assumes float32 (4 bytes).
+    - Detect layer returns 0.0 placeholder unless anchors/nc are specified.
+    """
+    with open(cfg_path, "r") as f:
+        cfg = yaml.safe_load(f)
+
+    dtype_size = 4
+    H, W = img_size
+    C = 3  # RGB input
+    sizes = []
+    saved = {}
+
+    # YOLOv11: layers are in backbone + head
+    for idx, layer in enumerate(cfg["backbone"] + cfg["head"]):
+        from_idx, repeats, module, args = layer
+        module = str(module)
+
+        if module in ("Conv", "ConvBnAct"):
+            C = args[0]
+            stride = args[2] if len(args) > 2 else 1
+            H //= stride
+            W //= stride
+        elif module in ("C2f", "C3", "C3k", "C3k2", "C3TR", "C2PSA"):
+            C = args[0]
+        elif module == "SPPF":
+            C = args[0]
+        elif "Upsample" in module:
+            scale = args[1] if len(args) > 1 else 2
+            H *= scale
+            W *= scale
+        elif module == "Concat":
+            total_C = 0
+            for src in from_idx:
+                if src == -1:
+                    total_C += saved[idx - 1][0]
+                elif isinstance(src, int):
+                    total_C += saved[src][0]
+                else:
+                    raise ValueError(f"Concat source not handled: {src}")
+            C = total_C
+        elif module == "Detect":
+            sizes.append(0.0)  # can't infer from YAML
+            saved[idx] = (C, H, W)
+            continue
+        else:
+            # unknown block → keep previous channels
+            pass
+
+        size_mb = round(C * H * W * dtype_size / (1024 * 1024), 2)
+        sizes.append(size_mb)
+        saved[idx] = (C, H, W)
+
+    for i in range(0 ,len(sizes)):
+        from_idx = get_layer_output(i)[1]
+        if len(from_idx) == 1 :
+            continue
+        temp = 0
+        for j in range(len(from_idx)):
+            temp = temp + sizes[from_idx[j] + 1]
+        sizes[i] = temp
+    return sizes
+
+
+

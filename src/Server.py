@@ -11,7 +11,7 @@ import src.Log
 from ultralytics import YOLO
 
 class Server:
-    def __init__(self, config):
+    def __init__(self, config , split_point ):
         # RabbitMQ
         address = config["rabbit"]["address"]
         username = config["rabbit"]["username"]
@@ -22,6 +22,7 @@ class Server:
         self.total_clients = config["server"]["clients"]
         self.cut_layer = config["server"]["cut-layer"]
         self.batch_frame = config["server"]["batch-frame"]
+        self.split_point = split_point
 
         credentials = pika.PlainCredentials(username, password)
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(address, 5672, f'{virtual_host}', credentials))
@@ -86,7 +87,8 @@ class Server:
             "d": (23, [16, 19, 22])
         }
         model = YOLO(f"{self.model_name}.pt")
-        splits = default_splits[self.cut_layer]
+        # splits = default_splits[self.cut_layer]
+        splits = self.split_point
         file_path = f"{self.model_name}.pt"
         if os.path.exists(file_path):
             src.Log.print_with_color(f"Load model {self.model_name}.", "green")

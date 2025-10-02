@@ -59,7 +59,7 @@ class Scheduler:
                     body=message,
                 )
         except Exception as e:
-            logger.log_error(f"Frame {frame_index}: Failed to send data to next layer. Error: {e}")
+            logger.log_error(f"[send_next_layer]: Failed to send data to next layer. Error: {e}")
     def send_to_tracker(self, tracker_queue, predictions, frame_index, logger, signal='CONTINUE' ,
                         total_time = -1 ):
     # send bounding box to tracker from client 2 to tracker
@@ -96,7 +96,7 @@ class Scheduler:
                 body=message_bytes
             )
         except Exception as e:
-            logger.log_error(f"Frame {frame_index}: Failed to send data to tracker. Error: {e}")
+            logger.log_error(f"[send_to_tracker]: Failed to send data to tracker. Error: {e}")
 
     def send_ori_img(self, tracker_queue, frame_to_send, frame_index, orig_img_size, logger, total_frames=-1,
                      signal='CONTINUE' , total_time = -1 ):
@@ -127,20 +127,12 @@ class Scheduler:
                 body=message_bytes
             )
         except Exception as e:
-            logger.log_error(f"Frame {frame_index}: Failed to send data to tracker. Error: {e}")
-
-    def get_total_frames(self, video_path):
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            raise Exception("Cannot open video file")
-
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        cap.release()
-        return total_frames
+            logger.log_error(f"[send_ori_img]: Failed to send data to tracker. Error: {e}")
 
     def first_layer(self, model, data, save_layers, batch_frame, logger, compress):
         start_time = time.time()
         input_image = []
+        lst_frame = []
         predictor = SplitDetectionPredictor(model, overrides={"imgsz": 640})
 
         frame_index = 1
@@ -176,25 +168,38 @@ class Scheduler:
                                   total_time= total_time)
                 break
 
-            # make border
             h, w, c = frame.shape
-            size = max(h, w)
             orig_img_size = (h, w)
-            if h > w:
-                border_size = h - w
-                frame = cv2.copyMakeBorder(frame, 0, 0, 0, border_size, cv2.BORDER_CONSTANT, value=(0, 0, 0))
-            else:
-                border_size = w - h
-                frame = cv2.copyMakeBorder(frame, 0, border_size, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+            # make border
+            # size = max(h, w)
+            # if h > w:
+            #     border_size = h - w
+            #     frame = cv2.copyMakeBorder(frame, 0, 0, 0, border_size, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+            # else:
+            #     border_size = w - h
+            #     frame = cv2.copyMakeBorder(frame, 0, border_size, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
 
-            self.send_ori_img(self.ori_img_queue, frame, frame_index, orig_img_size, logger, total_frames)
 
+            # self.send_ori_img(self.ori_img_queue, frame, frame_index, orig_img_size, logger, total_frames)
+            lst_frame.append(frame)
             frame = cv2.resize(frame, (640, 640))
             frame = frame.astype('float32') / 255.0
             tensor = torch.from_numpy(frame).permute(2, 0, 1)  # shape: (3, 640, 640)
             input_image.append(tensor)
 
             if len(input_image) == batch_frame:
+                # for i, t in enumerate(lst_frame):
+                #     if isinstance(t, torch.Tensor):
+                #         print(f"Frame {i}:")
+                #         print(f"  type     : {type(t)}")
+                #         print(f"  shape    : {t.shape}")
+                #         print(f"  dtype    : {t.dtype}")
+                #         print(f"  device   : {t.device}")
+                #     else:
+                #         print(f"Frame {i}: not a Tensor, type = {type(t)}")
+                #
+                # print(f"len(lst_frame) = {len(lst_frame)}")
+                self.send_ori_img(self.ori_img_queue, lst_frame , frame_index, orig_img_size, logger, total_frames)
                 input_image = torch.stack(input_image)
                 logger.log_info(f'Start inference {batch_frame} frames.')
                 input_image = input_image.to(self.device)
@@ -220,6 +225,7 @@ class Scheduler:
                 self.send_next_layer(self.intermediate_queue, y, logger, compress)
                 logger.log_info('Send a message.')
                 input_image = []
+                lst_frame = []
                 pbar.update(batch_frame)
                 frame_index += 1
             else:
@@ -229,7 +235,6 @@ class Scheduler:
         cap.release()
         pbar.close()
         logger.log_info(f"Finish Inference.")
-
 
     def last_layer(self, model, batch_frame, logger, compress):
         start_time = time.time()
@@ -270,7 +275,7 @@ class Scheduler:
                     logger.log_info(f'Start inference {batch_frame} frames.')
                     predictions = model.forward_tail(y)
                     self.send_to_tracker(self.bbox_queue, predictions, frame_index, logger)
-                    frame_index += 1
+                    frame_index += batch_frame
 
                     logger.log_info(f'End inference {batch_frame} frames.')
 
@@ -461,3 +466,13 @@ class Scheduler:
             self.check_last_layer(model, batch_frame, logger, compress, cal_map)
         else:
             self.middle_layer(model)
+
+    def get_total_frames(self, video_path):
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise Exception("Cannot open video file")
+
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
+        return total_frames
+

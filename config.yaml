@@ -1,24 +1,32 @@
 name: YOLO
 server:
-  cut-layer: d #or b, c, d
+  cut-layer: b #or b, c, d
   clients:
     - 1
     - 1
   model: yolo11n
-  batch-frame: 1
+  batch-frame: 2
+model: yolo11n
 rabbit:
   address: 127.0.0.1
   username: guest
   password: guest
   virtual-host: /
+  virtual_host: /
+  queue_device_1: "device1"
+  queue_device_2: "device2"
 
-data: video2.mp4
+data: video.mp4
 log-path: .
 control-count: 10
 debug-mode: False
 compress:
-  enable: False
-  num_bit: 8
+  enable: True
+  num_bit: 2
 cal_map:
   enable: False
   create_label: False
+
+time_layer:
+  num_round: 2
+  input_shape: [1, 3, 640, 640]
