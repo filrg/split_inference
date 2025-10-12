@@ -30,3 +30,7 @@ cal_map:
 time_layer:
   num_round: 2
   input_shape: [1, 3, 640, 640]
+
+partition :
+  auto : True       # if set False then get [server][cut-layer]
+  re-measure : True # if set False then get result from partition.json

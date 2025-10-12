@@ -1,7 +1,6 @@
 import argparse
 import yaml
-from src.sender import MessageSender
-from src.receiver import MessageReceiver
+from src.consumers import MessageSender , MessageReceiver
 from src.time_layers import LayerProfiler
 from src.controller import Controller
 from src.handle_data import Data

@@ -190,13 +190,13 @@ class Scheduler:
             h, w, c = frame.shape
             orig_img_size = (h, w)
             # make border
-            # size = max(h, w)
-            # if h > w:
-            #     border_size = h - w
-            #     frame = cv2.copyMakeBorder(frame, 0, 0, 0, border_size, cv2.BORDER_CONSTANT, value=(0, 0, 0))
-            # else:
-            #     border_size = w - h
-            #     frame = cv2.copyMakeBorder(frame, 0, border_size, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+            size = max(h, w)
+            if h > w:
+                border_size = h - w
+                frame = cv2.copyMakeBorder(frame, 0, 0, 0, border_size, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+            else:
+                border_size = w - h
+                frame = cv2.copyMakeBorder(frame, 0, border_size, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
 
 
             # self.send_ori_img(self.ori_img_queue, frame, frame_index, orig_img_size, logger, total_frames)
