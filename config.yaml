@@ -22,7 +22,7 @@ control-count: 10
 debug-mode: False
 compress:
   enable: True
-  num_bit: 2
+  num_bit: 8
 cal_map:
   enable: False
   create_label: False

@@ -9,7 +9,7 @@ import cv2
 import os
 
 from ultralytics.utils import ops
-from src.Utils import write_partial
+from src.Utils import write_partial , dict_data
 
 from queue import Queue, Empty
 from src.Model import BoundingBox
@@ -46,18 +46,7 @@ class Tracker:
         self.fps = 30
         self.orig_img_size = (0 , 0)
 
-        self.dict_data = {
-            "Time" : -1,
-            "PointCut" : config["server"]["cut-layer"],
-            "[T]totalTM" : -1,
-            "[T]FPSR" : -1,
-            "[1]totalFr" : -1,
-            "[1]totalTm" : -1,
-            "[2]totalTm" : -1,
-            "[1]outSze[T]" : -1,
-            "[1]outSze[2]" : -1,
-            "[2]outSize" : -1
-        }
+        self.dict_data = dict_data
         self.digits = 5
 
         self.prev_imshow = time.time()
@@ -106,6 +95,10 @@ class Tracker:
                         self.dict_data["[1]totalTm"] = round(message.get('total_time', -1), self.digits)
                         self.dict_data["[1]outSze[T]"] = message.get('size_mess2tracker', -1)
                         self.dict_data["[1]outSze[2]"] = message.get('size_mess2cl2', -1)
+                        self.dict_data["[1]GPU_time"] = message.get('GPU_time')
+                        self.dict_data["[1]peak_RAM"] = message.get('peak_RAM')
+                        self.dict_data["[1]peak_VRAM"] = message.get('peak_VRAM')
+                        print(gpu_time)
                     except Exception:
                         pass
                 return
@@ -146,6 +139,9 @@ class Tracker:
                     try:
                         self.dict_data["[2]totalTm"] = round(message.get('total_time', -1), self.digits)
                         self.dict_data["[2]outSize"] = message.get('size_mess2tracker', -1)
+                        self.dict_data["[2]GPU_time"] = message.get('GPU_time')
+                        self.dict_data["[2]peak_RAM"] = message.get('peak_RAM')
+                        self.dict_data["[2]peak_VRAM"] = message.get('peak_VRAM')
                     except Exception:
                         pass
                 return
@@ -267,7 +263,7 @@ class Tracker:
                 if results:
                     for idx , result in enumerate(results):
                         annotated_image = result.plot()
-                        cv2.imshow("Visual Detection Output", annotated_image)
+                        # cv2.imshow("Visual Detection Output", annotated_image)
                         # use waitKey small; pressing q can be used to stop
                         key = cv2.waitKey(int(1000 / max(1, self.fps))) & 0xFF
                         if key == ord('q'):

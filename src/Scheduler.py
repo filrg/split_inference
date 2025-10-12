@@ -8,7 +8,7 @@ from src.Utils import load_ground_truth, compute_map , format_size
 import os
 import copy
 import time
-
+import psutil
 
 class Scheduler:
     def __init__(self, client_id, layer_id, channel, device):
@@ -24,7 +24,15 @@ class Scheduler:
 
         self.size_mess_cl1_2_tracker = -1
         self.size_mess_cl1_2_cl2 = -1
-        self.size_mess_cl2_2_tracker = -1 
+        self.size_mess_cl2_2_tracker = -1
+
+        self.gpu_time_1 = 0
+        self.peak_vram_1 = 0
+        self.peak_ram_1 = 0
+        self.gpu_time_2 = 0
+        self.peak_vram_2 = 0
+        self.peak_ram_2 = 0
+        self.vram_of_model = 0
 
     def send_next_layer(self, intermediate_queue, data, logger, compress,  signal = 'CONTINUE'):
         try :
@@ -85,7 +93,10 @@ class Scheduler:
                 message_to_tracker = {
                     'signal' : 'STOP' ,
                     'total_time' : total_time ,
-                    'size_mess2tracker' : format_size(self.size_mess_cl2_2_tracker)
+                    'size_mess2tracker' : format_size(self.size_mess_cl2_2_tracker),
+                    'GPU_time' : str(round(self.gpu_time_2 , 5)) + 's' ,
+                    'peak_RAM' : str(round(self.peak_ram_2 , 3)) + "MB" ,
+                    'peak_VRAM' : str(round(self.peak_vram_2 , 3 )) + "MB"
                 }
 
             message_bytes = pickle.dumps(message_to_tracker)
@@ -112,9 +123,12 @@ class Scheduler:
             else:
                 message = {
                     "signal" : 'STOP',
-                    "total_time" : total_time,
+                    "total_time" : str(total_time) + "s",
                     "size_mess2tracker" : format_size(self.size_mess_cl1_2_tracker),
-                    "size_mess2cl2" : format_size(self.size_mess_cl1_2_cl2)
+                    "size_mess2cl2" : format_size(self.size_mess_cl1_2_cl2),
+                    "GPU_time" : str(round(self.gpu_time_1 , 5)) + "s" ,
+                    "peak_RAM" : str(round(self.peak_ram_1 , 3)) + "MB" ,
+                    "peak_VRAM" : str(round(self.peak_vram_1 , 3)) + "MB"
                 }
 
 
@@ -134,13 +148,17 @@ class Scheduler:
         input_image = []
         lst_frame = []
         predictor = SplitDetectionPredictor(model, overrides={"imgsz": 640})
+        process = psutil.Process(os.getpid())
 
         frame_index = 1
         self.channel.queue_declare(queue=self.ori_img_queue, durable=False)
         self.channel.basic_qos(prefetch_count=50)
 
         model.eval()
+        vram_before_transfer_model = torch.cuda.memory_allocated() / 1024 ** 2
         model.to(self.device)
+        vram_after_transfer_model  = torch.cuda.memory_allocated() / 1024 ** 2
+        self.vram_of_model = vram_after_transfer_model - vram_before_transfer_model
         video_path = data
         cap = cv2.VideoCapture(video_path)
 
@@ -153,7 +171,6 @@ class Scheduler:
         fps = cap.get(cv2.CAP_PROP_FPS)
         logger.log_info(f"FPS input: {fps}")
 
-        path = None
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         pbar = tqdm(desc="Processing video (while loop)", unit="frame")
@@ -162,10 +179,12 @@ class Scheduler:
             # send origin frame
             if not ret or frame is None:
                 y = 'STOP'
+                self.gpu_time_1 = self.gpu_time_1 / 1000.0  # convert to second
                 total_time = time.time() - start_time
                 self.send_next_layer(self.intermediate_queue, y, logger, compress , signal='STOP')
                 self.send_ori_img(self.ori_img_queue, y, frame_index, (0, 0), logger, signal='STOP' ,
                                   total_time= total_time)
+                print(f"\n[GPU time ] {self.gpu_time_1} | [peak VRAM ] {self.peak_vram_1} | [peak RAM ] {self.peak_ram_1}")
                 break
 
             h, w, c = frame.shape
@@ -188,17 +207,6 @@ class Scheduler:
             input_image.append(tensor)
 
             if len(input_image) == batch_frame:
-                # for i, t in enumerate(lst_frame):
-                #     if isinstance(t, torch.Tensor):
-                #         print(f"Frame {i}:")
-                #         print(f"  type     : {type(t)}")
-                #         print(f"  shape    : {t.shape}")
-                #         print(f"  dtype    : {t.dtype}")
-                #         print(f"  device   : {t.device}")
-                #     else:
-                #         print(f"Frame {i}: not a Tensor, type = {type(t)}")
-                #
-                # print(f"len(lst_frame) = {len(lst_frame)}")
                 self.send_ori_img(self.ori_img_queue, lst_frame , frame_index, orig_img_size, logger, total_frames)
                 input_image = torch.stack(input_image)
                 logger.log_info(f'Start inference {batch_frame} frames.')
@@ -211,8 +219,30 @@ class Scheduler:
                 # Preprocess
                 preprocess_image = predictor.preprocess(input_image)
 
-                # Head predict
-                y = model.forward_head(preprocess_image, save_layers)
+                # Head predictf
+                y = None
+                if self.device == "cuda":
+                    # create event
+                    start_event = torch.cuda.Event(enable_timing=True)
+                    end_event = torch.cuda.Event(enable_timing=True)
+
+                    start_event.record()
+                    y = model.forward_head(preprocess_image, save_layers)
+                    end_event.record()
+
+                    torch.cuda.synchronize()
+                    vram_peak = torch.cuda.max_memory_allocated() / 1024 ** 2
+                    self.peak_vram_1 = vram_peak
+                    gpu_time_ms = start_event.elapsed_time(end_event)
+                    self.gpu_time_1 += gpu_time_ms
+
+                else :
+                    y = model.forward_head(preprocess_image, save_layers)
+
+                ram_current  = process.memory_info().rss / 1024 ** 2
+                self.peak_ram_1 = max(self.peak_ram_1 , ram_current)
+                # print(f"\n[RAM] {ram_current} | [peak RAM] : {self.peak_ram_1}")
+
                 logger.log_info(f'End inference {batch_frame} frames.')
 
                 y["img_shape"] = preprocess_image.shape[2:]
@@ -230,6 +260,7 @@ class Scheduler:
                 frame_index += 1
             else:
                 continue
+
         print(f'size message: {self.size_mess_cl1_2_cl2} bytes.')
         logger.log_info(f'size message: {self.size_mess_cl1_2_cl2} bytes.')
         cap.release()
@@ -241,7 +272,7 @@ class Scheduler:
         num_last = 1
         count = 0
         frame_index = 1
-
+        process = psutil.Process(os.getpid())
         model.eval()
         model.to(self.device)
         last_queue = f"intermediate_queue_{self.layer_id - 1}"
@@ -273,7 +304,28 @@ class Scheduler:
 
                     # Tail predict
                     logger.log_info(f'Start inference {batch_frame} frames.')
-                    predictions = model.forward_tail(y)
+                    if self.device == "cuda":
+                        start_event = torch.cuda.Event(enable_timing=True)
+                        end_event = torch.cuda.Event(enable_timing=True)
+
+                        start_event.record()
+                        predictions = model.forward_tail(y)
+                        end_event.record()
+
+                        torch.cuda.synchronize()
+                        vram_current = torch.cuda.memory_allocated() / 1024 ** 2
+                        vram_reserved = torch.cuda.memory_reserved() / 1024 ** 2
+                        vram_peak = torch.cuda.max_memory_allocated() / 1024 ** 2
+                        self.peak_vram_2 = vram_peak
+                        # print(
+                        #     f"\nVRAM current: {vram_current:.2f} MB | reserved: {vram_reserved:.2f} MB | peak: {vram_peak:.2f} MB")
+                        gpu_time_ms = start_event.elapsed_time(end_event)
+                        self.gpu_time_2 += gpu_time_ms
+                    else :
+                        predictions = model.forward_tail(y)
+                    ram_current = process.memory_info().rss / 1024 ** 2
+                    self.peak_ram_2 = max(self.peak_ram_2, ram_current)
+                        
                     self.send_to_tracker(self.bbox_queue, predictions, frame_index, logger)
                     frame_index += batch_frame
 
@@ -282,6 +334,8 @@ class Scheduler:
                     pbar.update(batch_frame)
                 else:
                     total_time = time.time() - start_time
+                    self.gpu_time_2 = self.gpu_time_2 / 1000.0
+                    print(f"\n [GPU time] {self.gpu_time_2} | [peak VRAM ] {self.peak_vram_2} | [peak RAM ] {self.peak_ram_2}")
                     self.send_to_tracker(self.bbox_queue, 'STOP', frame_index, logger, 'STOP', total_time)
                     count += 1
                     if count == num_last:

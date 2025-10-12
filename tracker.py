@@ -1,4 +1,4 @@
-from src.Tracker_1_processing import Tracker
+from src.Tracker_threading import Tracker
 import yaml
 import pika
 import os

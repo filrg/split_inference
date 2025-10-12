@@ -129,14 +129,30 @@ def load_ground_truth(label_dir, image_dir):
 
 
 """ write to csv file """
+def list_to_dict_with_minus_one(lst):
+    return {key: -1 for key in lst}
 
 cols = [
     "Time" , "PointCut" ,
     "[T]totalTM" , "[T]FPSR" ,
-    "[1]totalFr" , "[1]totalTm", "[1]outSze[T]" , "[1]outSze[2]" ,
-    "[2]totalTm" , "[2]outSize"
+    "[1]totalFr" , "[2]totalTm" , "[1]totalTm",
+    "[1]outSze[T]" , "[1]outSze[2]" ,"[2]outSize",
+    "[1]GPU_time" , "[2]GPU_time" ,
+    "[1]peak_RAM" , "[2]peak_RAM" ,
+    "[1]peak_VRAM" , "[2]peak_VRAM" ,
 ]
+# cols = [
+#  'time', 'pc',
+#  '[T]tm', '[T]fps',
+#  '[1]fr', '[2]tm', '[1]tm',
+#  '[1]outT', '[1]out2', '[2]out',
+#  '[1]gpu', '[2]gpu',
+#  '[1]ram', '[2]ram',
+#  '[1]vram', '[2]vram'
+# ]
 
+
+dict_data = list_to_dict_with_minus_one(cols)
 file_path = "output.csv"
 
 row_buffer = {}
