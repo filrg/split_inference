@@ -116,7 +116,6 @@ class Tracker:
             self.orig_img_size = message.get("orig_img_size", self.orig_img_size)
 
             # just use only queue
-
             self.cnt_img += len(frames)
             self.handle_data()
         except Exception as e:
@@ -263,7 +262,8 @@ class Tracker:
                 if results:
                     for idx , result in enumerate(results):
                         annotated_image = result.plot()
-                        # cv2.imshow("Visual Detection Output", annotated_image)
+                        annotated_image = annotated_image[:self.orig_img_size[0] , : self.orig_img_size[1]]
+                        cv2.imshow("Visual Detection Output", annotated_image)
                         # use waitKey small; pressing q can be used to stop
                         key = cv2.waitKey(int(1000 / max(1, self.fps))) & 0xFF
                         if key == ord('q'):
