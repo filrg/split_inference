@@ -56,10 +56,6 @@ class Dijkstra :
         end_node = self.num_points * 2
         curr_node = end_node
         lst_nodes = []
-        res_cost = 0
-        for item in trace_back:
-            if item["node"] == end_node:
-                res_cost = item["cost"]
         while True:
             lst_nodes.append(curr_node)
             if curr_node == self.start:

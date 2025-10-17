@@ -43,7 +43,7 @@ class Tracker:
         self.image_stream_stopped = False
         self.bbox_stream_stopped = False
 
-        self.fps = 30
+        self.fps = 24
         self.orig_img_size = (0 , 0)
 
         self.dict_data = dict_data
@@ -60,8 +60,8 @@ class Tracker:
         # frame
         self.total_frames = 0
         self.frame_showed = 0
-        self.frame_received = 0
-        self.frame_start = 10
+        self.num_frame_received = 0
+        self.frame_start = -1
         self.frame_for_1st = -1
         self.frame_for_2nd = -1
         self.frame_for_3rd = -1
@@ -116,7 +116,7 @@ class Tracker:
             self.orig_img_size = message.get("orig_img_size", self.orig_img_size)
 
             # just use only queue
-            self.cnt_img += len(frames)
+            self.cnt_img += self.batch_size
             self.handle_data()
         except Exception as e:
             print("[Tracker][_image_callback] error:", e)
@@ -146,13 +146,11 @@ class Tracker:
                 return
 
             predictions = message.get("predictions")
-            # if predictions is not None :
-            #     print("Get prediction done !")
 
             # handle by just only queue
             self.bbox_buffer_queue.put(predictions)
 
-            self.cnt_bbox += 1
+            self.cnt_bbox += self.batch_size
             self.handle_data()
         except Exception as e:
             print("[Tracker][_bbox_callback] error:", e)
@@ -282,7 +280,6 @@ class Tracker:
                 print("[Tracker][display] processing error:", e)
                 continue
 
-
     def visual_time(self , data , title):
         plt.plot(data, marker='o', linestyle='-', label="My Data")
         plt.title(title)
@@ -293,13 +290,30 @@ class Tracker:
         plt.show()
 
     def handle_data(self):
-        # get number of frame for 1s , 2s and 3s
         # use queue sizes safely
         self.frame_received = min(self.cnt_img , self.cnt_bbox)
-        if self.frame_received == 1:
+        if self.frame_received == self.batch_size and self.time_start_receive == -1 :
             self.time_start_receive = time.time()
+            print(f"[Time start receive ] {self.time_start_receive}")
 
-        if (self.frame_start != 0 and self.frame_received >= self.frame_start) and not self.check_display:
+        frame_profiler = 5 * self.batch_size
+        if self.frame_received == frame_profiler and self.frame_start == -1 :
+            current_time = time.time()
+            period_time = current_time - self.time_start_receive
+            fps_real = frame_profiler / period_time
+            print(f"[FPS real ] {fps_real}")
+            if int(fps_real) < int(self.fps):
+                time_need = self.total_frames / fps_real
+                time_target = self.total_frames / self.fps
+                gap_time = time_need - time_target
+                # print(f"[Gap time] {gap_time}")
+                self.frame_start = int(gap_time * fps_real )
+                # formula : frame_start : total * ( 1 - fps_r / fps  )
+            else :
+                self.frame_start = 6 * self.batch_size
+            print(f"[Frame start] {self.frame_start}")
+
+        elif (self.frame_start != -1 and self.frame_received >= self.frame_start) and not self.check_display:
             print("Start show output at frame ", self.frame_received)
             self.check_display = True
             # start display thread only once
@@ -330,48 +344,3 @@ class Tracker:
         self.dict_data["[1]totalFr"] = self.total_frames
 
 
-    # def cleanup(self):
-    #     try:
-    #         # Lưu dữ liệu trước khi thoát
-    #         try:
-    #             self.data_for_csv()
-    #             write_partial(self.dict_data)
-    #             print(f"[Frame showed] {self.frame_showed}")
-    #         except Exception as e:
-    #             print(f"[WARN] Could not save CSV data: {e}")
-    #
-    #         print("[Tracker] Cleaning up...")
-    #
-    #         # Kiểm tra & xóa queue nếu trống
-    #         def safe_delete_queue(channel, qname):
-    #             try:
-    #                 state = channel.queue_declare(queue=qname, passive=True)
-    #                 msg_count = state.method.message_count
-    #                 consumer_count = state.method.consumer_count
-    #                 print(f"[DEBUG] Queue {qname} -> messages={msg_count}, consumers={consumer_count}")
-    #
-    #                 if msg_count == 0 and consumer_count == 0:
-    #                     channel.queue_delete(queue=qname)
-    #                     print(f"[OK] Queue {qname} deleted")
-    #                 else:
-    #                     print(f"[SKIP] Queue {qname} not empty or still has consumers")
-    #             except Exception as e:
-    #                 print(f"[WARN] Could not check/delete queue {qname}: {e}")
-    #
-    #         if hasattr(self, "channel") and self.channel and self.channel.is_open:
-    #             if hasattr(self, "bbox_queue") and self.bbox_queue:
-    #                 safe_delete_queue(self.channel, self.bbox_queue)
-    #             if hasattr(self, "ori_img_queue") and self.ori_img_queue:
-    #                 safe_delete_queue(self.channel, self.ori_img_queue)
-    #
-    #         # Đóng connection
-    #         if self.connection and self.connection.is_open:
-    #             self.connection.close()
-    #             print("[OK] Connection closed")
-    #
-    #     finally:
-    #         try:
-    #             cv2.destroyAllWindows()
-    #         except Exception:
-    #             pass
-    #         print("[Tracker] Cleanup finished (connection/windows closed).")

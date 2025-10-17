@@ -10,7 +10,7 @@ import yaml
 from src.controller import Controller
 from src.handle_data import Data
 from src.dijkstra import Dijkstra
-from src.Utils import get_layer_output
+from src.Utils import get_layer_output , get_log , save_log
 
 parser = argparse.ArgumentParser(description="Split learning framework with controller.")
 args = parser.parse_args()
@@ -29,27 +29,27 @@ def signal_handler(sig, frame):
     delete_old_queues(address, username, password, virtual_host)
     sys.exit(0)
 
-def run_controller():
-    app = Controller(config)
-    data = app.run()
-    layer_times = data["layer_times"]
-    comm_times = data["comm_times"]
-    cost = Data(layer_times, comm_times).run()
-    dijkstra_app = Dijkstra(cost, data["name_devices"])
-    print(get_layer_output(dijkstra_app.run()))
-    return get_layer_output(dijkstra_app.run())
-
 if __name__ == "__main__":
-    app = Controller(config)
-    data = app.run()
-    layer_times = data["layer_times"]
-    comm_times = data["comm_times"]
-    cost = Data(layer_times, comm_times).run()
-    dijkstra_app = Dijkstra(cost, data["name_devices"])
-    print(get_layer_output(dijkstra_app.run()))
-    split_point = get_layer_output(dijkstra_app.run())
-    signal.signal(signal.SIGINT, signal_handler)
-    delete_old_queues(address, username, password, virtual_host)
-    server = Server(config , split_point)
+    if config["partition"]["auto"] :
+        if config["partition"]["re-measure"] :
+            app = Controller(config)
+            data = app.run()
+            layer_times = data["layer_times"]
+            comm_times = data["comm_times"]
+            cost = Data(layer_times, comm_times).run()
+            dijkstra_app = Dijkstra(cost, data["name_devices"])
+            split_point = get_layer_output(dijkstra_app.run())
+            delete_old_queues(address, username, password, virtual_host)
+            save_log(split_point)
+        else:
+            split_point = get_log()
+
+        print(f"split point {split_point}")
+        signal.signal(signal.SIGINT, signal_handler)
+        # delete_old_queues(address, username, password, virtual_host)
+        server = Server(config, split_point)
+        # save_log(split_point)
+    else :
+        server = Server(config , -1)    # if 2nd para is -1 , get cut layer a , b, c or d
     server.start()
     src.Log.print_with_color("Ok, ready!", "green")

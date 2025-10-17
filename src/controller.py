@@ -22,7 +22,7 @@ class Controller :
             pika.ConnectionParameters(
                 config["rabbit"]["address"],
                 5672,
-                config["rabbit"]["virtual_host"],
+                config["rabbit"]["virtual-host"],
                 credentials,
             )
         )

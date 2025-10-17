@@ -25,7 +25,7 @@ class MessageSender:
                     config["rabbit"]["username"],
                     config["rabbit"]["password"]
                 ),
-                virtual_host=config["rabbit"]["virtual_host"]
+                virtual_host=config["rabbit"]["virtual-host"]
             )
         )
         self.queue_device_1 = config["rabbit"]["queue_device_1"]
@@ -164,7 +164,7 @@ class MessageReceiver:
             pika.ConnectionParameters(
                 config["rabbit"]["address"],
                 5672,
-                config["rabbit"]["virtual_host"],
+                config["rabbit"]["virtual-host"],
                 credentials,
             )
         )

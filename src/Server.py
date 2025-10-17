@@ -89,6 +89,8 @@ class Server:
         model = YOLO(f"{self.model_name}.pt")
         # splits = default_splits[self.cut_layer]
         splits = self.split_point
+        if splits == -1 :
+            splits = default_splits[self.cut_layer]
         file_path = f"{self.model_name}.pt"
         if os.path.exists(file_path):
             src.Log.print_with_color(f"Load model {self.model_name}.", "green")

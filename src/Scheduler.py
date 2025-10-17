@@ -123,7 +123,7 @@ class Scheduler:
             else:
                 message = {
                     "signal" : 'STOP',
-                    "total_time" : str(total_time) + "s",
+                    "total_time" : total_time,
                     "size_mess2tracker" : format_size(self.size_mess_cl1_2_tracker),
                     "size_mess2cl2" : format_size(self.size_mess_cl1_2_cl2),
                     "GPU_time" : str(round(self.gpu_time_1 , 5)) + "s" ,

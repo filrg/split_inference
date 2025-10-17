@@ -6,7 +6,7 @@ import numpy as np
 import cv2
 import pandas as pd
 import csv
-import yaml
+import yaml , json
 
 
 def delete_old_queues(address, username, password, virtual_host):
@@ -141,16 +141,6 @@ cols = [
     "[1]peak_RAM" , "[2]peak_RAM" ,
     "[1]peak_VRAM" , "[2]peak_VRAM" ,
 ]
-# cols = [
-#  'time', 'pc',
-#  '[T]tm', '[T]fps',
-#  '[1]fr', '[2]tm', '[1]tm',
-#  '[1]outT', '[1]out2', '[2]out',
-#  '[1]gpu', '[2]gpu',
-#  '[1]ram', '[2]ram',
-#  '[1]vram', '[2]vram'
-# ]
-
 
 dict_data = list_to_dict_with_minus_one(cols)
 file_path = "output.csv"
@@ -306,4 +296,32 @@ def get_output_sizes(cfg_path, img_size=(640, 640)):
     return sizes
 
 
+def save_log(info, filename="cut_point.log"):
+    """
+    Save a tuple (or any data) to a file in JSON format.
+    Overwrites the file each time.
+    """
+    # Convert tuple to list for JSON compatibility
+    if isinstance(info, tuple):
+        info = {"type": "tuple", "data": list(info)}
+
+    with open(filename, "w") as f:
+        json.dump(info, f)
+
+def get_log(filename="cut_point.log"):
+    """
+    Read the tuple (or other data) back from file.
+    Returns tuple if it was saved as one.
+    """
+    try:
+        with open(filename, "r") as f:
+            data = json.load(f)
+
+        # Convert back to tuple if needed
+        if isinstance(data, dict) and data.get("type") == "tuple":
+            return tuple(data["data"])
+        return data
+
+    except FileNotFoundError:
+        return None
 

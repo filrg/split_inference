@@ -23,13 +23,14 @@ with open('config.yaml', 'r') as file:
 
 
 if __name__ == "__main__":
-    layer_id = args.layer_id
-    if layer_id == 1:
-        app = MessageSender(config)
-    else :
-        app = MessageReceiver(config)
-    app.run()
-    app.clean()
+    if config["partition"]["auto"] and config["partition"]["re-measure"] :
+        layer_id = args.layer_id
+        if layer_id == 1:
+            app = MessageSender(config)
+        else :
+            app = MessageReceiver(config)
+        app.run()
+        app.clean()
 
     client_id = uuid.uuid4()
     address = config["rabbit"]["address"]
