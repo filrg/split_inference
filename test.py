@@ -1,10 +1,9 @@
 import argparse
 import yaml
-from src.consumers import MessageSender , MessageReceiver
-from src.time_layers import LayerProfiler
-from src.controller import Controller
-from src.handle_data import Data
-from src.dijkstra import Dijkstra
+from src.partition.consumers import MessageSender , MessageReceiver
+from src.partition.controller import Controller
+from src.partition.handle_data import Data
+from src.partition.dijkstra import Dijkstra
 
 def load_config(path="config.yaml"):
     with open(path, "r") as f:

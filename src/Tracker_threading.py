@@ -43,7 +43,7 @@ class Tracker:
         self.image_stream_stopped = False
         self.bbox_stream_stopped = False
 
-        self.fps = 24
+        self.fps = 28
         self.orig_img_size = (0 , 0)
 
         self.dict_data = dict_data

@@ -5,10 +5,9 @@ import yaml
 import pika
 import pickle
 import socket
-from src.Utils import write_partial
+from src.Utils import write_partial , get_output_sizes
 from pathlib import Path
-from src.Utils import get_output_sizes
-from src.time_layers import LayerProfiler
+from src.partition.time_layers import LayerProfiler
 
 MAX_SIZE_QUEUE = 16777216
 INFINITY_TIME = 1000000
@@ -103,8 +102,6 @@ class MessageSender:
         }, queue_num=1)
 
         return times
-
-
 
     def run(self):
         sent_request = True

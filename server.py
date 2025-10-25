@@ -1,15 +1,14 @@
 import argparse
 import sys
 import signal
-import time
 
 from src.Server import Server
 from src.Utils import delete_old_queues
 import src.Log
 import yaml
-from src.controller import Controller
-from src.handle_data import Data
-from src.dijkstra import Dijkstra
+from src.partition.controller import Controller
+from src.partition.handle_data import Data
+from src.partition.dijkstra import Dijkstra
 from src.Utils import get_layer_output , get_log , save_log
 
 parser = argparse.ArgumentParser(description="Split learning framework with controller.")

@@ -1,5 +1,3 @@
-import time
-
 import pika
 import uuid
 import argparse
@@ -10,7 +8,7 @@ import torch
 import src.Log
 from src.RpcClient import RpcClient
 from src.Scheduler import Scheduler
-from src.consumers import MessageSender , MessageReceiver
+from src.partition.consumers import MessageSender , MessageReceiver
 
 parser = argparse.ArgumentParser(description="Split learning framework")
 parser.add_argument('--layer_id', type=int, required=True, help='ID of layer, start from 1')
