@@ -45,7 +45,8 @@ class Server:
         self.logger = src.Log.Logger(f"{log_path}/app.log")
         self.logger.log_info(f"Application start. Server is waiting for {self.total_clients} clients.")
 
-    def on_request(self, ch, method, props, body):
+
+    def on_request(self, ch: object, method: object, props: object, body: object) -> object:
         message = pickle.loads(body)
         action = message["action"]
         client_id = message["client_id"]
@@ -70,6 +71,7 @@ class Server:
         reply_queue_name = f"reply_{client_id}"
         self.reply_channel.queue_declare(reply_queue_name, durable=False)
         src.Log.print_with_color(f"[>>>] Sent notification to client {client_id}", "red")
+        print(f"[SPLIT_POINT] {self.split_point}")
         self.reply_channel.basic_publish(
             exchange='',
             routing_key=reply_queue_name,
@@ -91,6 +93,7 @@ class Server:
         splits = self.split_point
         if splits == -1 :
             splits = default_splits[self.cut_layer]
+        print(f"splits : {splits}")
         file_path = f"{self.model_name}.pt"
         if os.path.exists(file_path):
             src.Log.print_with_color(f"Load model {self.model_name}.", "green")
