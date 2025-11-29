@@ -5,7 +5,8 @@ from torch import Tensor
 from ultralytics import YOLO
 from ultralytics.engine.results import Results
 from ultralytics.models.yolo.detect.predict import DetectionPredictor
-from ultralytics.utils import ops
+from ultralytics.utils import nms, ops
+
 import os
 import yaml
 
@@ -85,7 +86,7 @@ class SplitDetectionPredictor(DetectionPredictor):
 
     def postprocess(self, preds, img_shape=None, orig_shape=None, orig_imgs=None):
         """Post-processes predictions and returns a list of Results objects."""
-        preds = ops.non_max_suppression(preds,
+        preds = nms.non_max_suppression(preds,
                                         self.args.conf,
                                         self.args.iou,
                                         agnostic=self.args.agnostic_nms,
@@ -119,7 +120,7 @@ class BoundingBox(DetectionPredictor):
 
     def postprocess(self, preds, img_shape=None, orig_shape=None, orig_imgs=None):
         """Post-processes predictions and returns a list of Results objects."""
-        preds = ops.non_max_suppression(preds,
+        preds = nms.non_max_suppression(preds,
                                         self.args.conf,
                                         self.args.iou,
                                         agnostic=self.args.agnostic_nms,
