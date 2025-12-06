@@ -55,7 +55,7 @@ from multiprocessing import Process, shared_memory , Queue ,Manager
 
 if __name__ == "__main__":
     try:
-        with open('config.yaml', 'r') as file:
+        with open('cfg/config.yaml', 'r') as file:
             config = yaml.safe_load(file)
         tracker_app = Tracker(config)
         tracker_app.run()

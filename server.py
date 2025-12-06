@@ -14,7 +14,7 @@ from src.Utils import get_layer_output , get_log , save_log
 parser = argparse.ArgumentParser(description="Split learning framework with controller.")
 args = parser.parse_args()
 
-with open('config.yaml') as file:
+with open('cfg/config.yaml') as file:
     config = yaml.safe_load(file)
 
 address = config["rabbit"]["address"]

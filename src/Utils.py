@@ -143,7 +143,7 @@ cols = [
 ]
 
 dict_data = list_to_dict_with_minus_one(cols)
-file_path = "output.csv"
+file_path = "res/output.csv"
 
 row_buffer = {}
 
@@ -296,7 +296,7 @@ def get_output_sizes(cfg_path, img_size=(640, 640)):
     return sizes
 
 
-def save_log(info, filename="cut_point.log"):
+def save_log(info, filename="res/cut_point.log"):
     """
     Save a tuple (or any data) to a file in JSON format.
     Overwrites the file each time.
@@ -308,7 +308,7 @@ def save_log(info, filename="cut_point.log"):
     with open(filename, "w") as f:
         json.dump(info, f)
 
-def get_log(filename="cut_point.log"):
+def get_log(filename="res/cut_point.log"):
     """
     Read the tuple (or other data) back from file.
     Returns tuple if it was saved as one.

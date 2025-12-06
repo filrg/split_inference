@@ -16,7 +16,7 @@ parser.add_argument('--device', type=str, required=False, help='Device of client
 
 args = parser.parse_args()
 
-with open('config.yaml', 'r') as file:
+with open('cfg/config.yaml', 'r') as file:
     config = yaml.safe_load(file)
 
 
