@@ -36,3 +36,11 @@ time_layer:
 partition:
   auto: True        # if set False then get [server][cut-layer]
   re-measure: False # if set False then get result from cut_point.log
+
+clustering :
+  mode : False
+  num_clusters : 2   # set 0 : find the best K value
+  max_iterations: 500 # loop in k means core
+  num_runs : 20       # loop for find the best silhouette value
+  weights : [1.4 , 1.2 , 1.1 , 0.65]  # core , total ram , internet , storage respectively
+
