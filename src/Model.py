@@ -5,7 +5,7 @@ from torch import Tensor
 from ultralytics import YOLO
 from ultralytics.engine.results import Results
 from ultralytics.models.yolo.detect.predict import DetectionPredictor
-from ultralytics.utils import ops
+from ultralytics.utils import ops , nms
 
 import os
 import yaml
