@@ -9,9 +9,17 @@ import os
 import copy
 import time
 import psutil
+from dataclasses import dataclass
+
+@dataclass 
+class MessageSize :
+    cl1_2_tracker: int = -1
+    cl1_2_cl2: int = -1
+    cl2_2_tracker: int = - 1
+
 
 class Scheduler:
-    def __init__(self, client_id, layer_id, channel, device):
+    def __init__(self, client_id, layer_id, channel, device , tracker = True ):
         self.client_id = client_id
         self.layer_id = layer_id
         self.channel = channel
@@ -22,9 +30,7 @@ class Scheduler:
         self.bbox_queue = "bbox_queue"
         self.ori_img_queue = "ori_img_queue"
 
-        self.size_mess_cl1_2_tracker = -1
-        self.size_mess_cl1_2_cl2 = -1
-        self.size_mess_cl2_2_tracker = -1
+        self.mess_size = MessageSize()
 
         self.gpu_time_1 = 0
         self.peak_vram_1 = 0
@@ -33,6 +39,8 @@ class Scheduler:
         self.peak_vram_2 = 0
         self.peak_ram_2 = 0
         self.vram_of_model = 0
+
+        self.enable_tracker = tracker
 
     def send_next_layer(self, intermediate_queue, data, logger, compress,  signal = 'CONTINUE'):
         try :
@@ -51,8 +59,8 @@ class Scheduler:
                     "action": "OUTPUT",
                     "data": data
                 })
-                if self.size_mess_cl1_2_cl2 == - 1:
-                    self.size_mess_cl1_2_cl2 = len(message)
+                if self.mess_size.cl1_2_cl2 == - 1:
+                    self.mess_size.cl1_2_cl2 = len(message)
 
                 self.channel.basic_publish(
                     exchange='',
@@ -70,6 +78,9 @@ class Scheduler:
             logger.log_error(f"[send_next_layer]: Failed to send data to next layer. Error: {e}")
     def send_to_tracker(self, tracker_queue, predictions, frame_index, logger, signal='CONTINUE' ,
                         total_time = -1 ):
+    # check set up Tracker at config
+        if self.enable_tracker == False:
+            return
     # send bounding box to tracker from client 2 to tracker
         try:
             if signal != 'STOP':
@@ -86,14 +97,14 @@ class Scheduler:
                     "predictions": prediction_tensor_cpu,
                     "frame_index": frame_index
                 }
-                if self.size_mess_cl2_2_tracker == -1 :
-                    self.size_mess_cl2_2_tracker = len(message_to_tracker)
+                if self.mess_size.cl2_2_tracker == -1 :
+                    self.mess_size.cl2_2_tracker = len(message_to_tracker)
 
             else:
                 message_to_tracker = {
                     'signal' : 'STOP' ,
                     'total_time' : total_time ,
-                    'size_mess2tracker' : format_size(self.size_mess_cl2_2_tracker),
+                    'size_mess2tracker' : format_size(self.mess_size.cl2_2_tracker),
                     'GPU_time' : str(round(self.gpu_time_2 , 5)) + 's' ,
                     'peak_RAM' : str(round(self.peak_ram_2 , 3)) + "MB" ,
                     'peak_VRAM' : str(round(self.peak_vram_2 , 3 )) + "MB"
@@ -111,6 +122,9 @@ class Scheduler:
 
     def send_ori_img(self, tracker_queue, frame_to_send, frame_index, orig_img_size, logger, total_frames=-1,
                      signal='CONTINUE' , total_time = -1 ):
+    # check set up of tracker at config file
+        if self.enable_tracker == False :
+            return
     # send origin images from client 1 to tracker
         try:
             if signal != 'STOP':
@@ -124,8 +138,8 @@ class Scheduler:
                 message = {
                     "signal" : 'STOP',
                     "total_time" : total_time,
-                    "size_mess2tracker" : format_size(self.size_mess_cl1_2_tracker),
-                    "size_mess2cl2" : format_size(self.size_mess_cl1_2_cl2),
+                    "size_mess2tracker" : format_size(self.self.mess_size.cl1_2_tracker),
+                    "size_mess2cl2" : format_size(self.mess_size.cl1_2_cl2),
                     "GPU_time" : str(round(self.gpu_time_1 , 5)) + "s" ,
                     "peak_RAM" : str(round(self.peak_ram_1 , 3)) + "MB" ,
                     "peak_VRAM" : str(round(self.peak_vram_1 , 3)) + "MB"
@@ -133,8 +147,8 @@ class Scheduler:
 
 
             message_bytes = pickle.dumps(message)
-            if self.size_mess_cl1_2_tracker == -1 :
-                self.size_mess_cl1_2_tracker = len(message_bytes)
+            if self.self.mess_size.cl1_2_tracker == -1 :
+                self.self.mess_size.cl1_2_tracker = len(message_bytes)
             self.channel.basic_publish(
                 exchange='',
                 routing_key=tracker_queue,
@@ -151,8 +165,10 @@ class Scheduler:
         process = psutil.Process(os.getpid())
 
         frame_index = 1
-        self.channel.queue_declare(queue=self.ori_img_queue, durable=False)
-        self.channel.basic_qos(prefetch_count=50)
+
+        if self.enable_tracker :
+            self.channel.queue_declare(queue=self.ori_img_queue, durable=False)
+            self.channel.basic_qos(prefetch_count=50)
 
         model.eval()
         vram_before_transfer_model = torch.cuda.memory_allocated() / 1024 ** 2
@@ -261,8 +277,8 @@ class Scheduler:
             else:
                 continue
 
-        print(f'size message: {self.size_mess_cl1_2_cl2} bytes.')
-        logger.log_info(f'size message: {self.size_mess_cl1_2_cl2} bytes.')
+        print(f'size message: {self.mess_size.cl1_2_cl2} bytes.')
+        logger.log_info(f'size message: {self.mess_size.cl1_2_cl2} bytes.')
         cap.release()
         pbar.close()
         logger.log_info(f"Finish Inference.")
@@ -279,8 +295,9 @@ class Scheduler:
         self.channel.queue_declare(queue=last_queue, durable=False)
         self.channel.basic_qos(prefetch_count=50)
 
-        self.channel.queue_declare(queue=self.bbox_queue, durable=False)
-        self.channel.basic_qos(prefetch_count=50)
+        if self.enable_tracker :
+            self.channel.queue_declare(queue=self.bbox_queue, durable=False)
+            self.channel.basic_qos(prefetch_count=50)
 
 
         pbar = tqdm(desc="Processing video (while loop)", unit="frame")
@@ -323,6 +340,7 @@ class Scheduler:
                         self.gpu_time_2 += gpu_time_ms
                     else :
                         predictions = model.forward_tail(y)
+
                     ram_current = process.memory_info().rss / 1024 ** 2
                     self.peak_ram_2 = max(self.peak_ram_2, ram_current)
                         
@@ -418,8 +436,8 @@ class Scheduler:
         y = 'STOP'
         self.send_next_layer(self.intermediate_queue, y, logger, compress, 'STOP')
 
-        print(f'size message: {self.size_mess_cl1_2_cl2} bytes.')
-        logger.log_info(f'size message: {self.size_mess_cl1_2_cl2} bytes.')
+        print(f'size message: {self.mess_size.cl1_2_cl2} bytes.')
+        logger.log_info(f'size message: {self.mess_size.cl1_2_cl2} bytes.')
         pbar.close()
         logger.log_info(f"Finish Inference.")
 

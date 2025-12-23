@@ -1,12 +1,6 @@
-import pika
-import pickle
-import yaml
-import torch
+import pika , pickle , yaml , time , os
+import torch , cv2 , threading
 import numpy as np
-import threading
-import time
-import cv2
-import os
 
 from ultralytics.utils import ops
 from src.Utils import write_partial , dict_data
@@ -43,7 +37,7 @@ class Tracker:
         self.image_stream_stopped = False
         self.bbox_stream_stopped = False
 
-        self.fps = 28
+        self.fps = 10
         self.orig_img_size = (0 , 0)
 
         self.dict_data = dict_data
@@ -130,6 +124,7 @@ class Tracker:
         """ get result and frame index from client 2 """
         try:
             message = pickle.loads(body)
+            # print("[message] " , message)
             # expect dict with 'signal' or regular dict
             if isinstance(message, dict) and message.get('signal') == 'STOP':
                 print("[Tracker] STOP signal received from bbox queue.")
@@ -269,6 +264,7 @@ class Tracker:
                             self.stop_event.set()
                             break
                         self.frame_showed += 1
+                        # print(f"[DEBUG FRAME SHOWED] { self.frame_showed}")
 
                 if self.total_frames and self.frame_showed >= self.total_frames:
                     # compute fps_mean and stop display
