@@ -19,13 +19,14 @@ class MessageSize :
 
 
 class Scheduler:
-    def __init__(self, client_id, layer_id, channel, device , tracker = True ):
+    def __init__(self, client_id, layer_id, channel, device , tracker = True , num_client = [1 , 1] ):
         self.client_id = client_id
         self.layer_id = layer_id
         self.channel = channel
         self.device = device
         self.intermediate_queue = f"intermediate_queue_{self.layer_id}"
         self.channel.queue_declare(self.intermediate_queue, durable=False)
+        self.num_client_1 = num_client[0]
 
         self.bbox_queue = "bbox_queue"
         self.ori_img_queue = "ori_img_queue"
@@ -138,17 +139,17 @@ class Scheduler:
                 message = {
                     "signal" : 'STOP',
                     "total_time" : total_time,
-                    "size_mess2tracker" : format_size(self.self.mess_size.cl1_2_tracker),
+                    "size_mess2tracker" : format_size(self.mess_size.cl1_2_tracker),
                     "size_mess2cl2" : format_size(self.mess_size.cl1_2_cl2),
                     "GPU_time" : str(round(self.gpu_time_1 , 5)) + "s" ,
                     "peak_RAM" : str(round(self.peak_ram_1 , 3)) + "MB" ,
                     "peak_VRAM" : str(round(self.peak_vram_1 , 3)) + "MB"
                 }
 
-
             message_bytes = pickle.dumps(message)
-            if self.self.mess_size.cl1_2_tracker == -1 :
-                self.self.mess_size.cl1_2_tracker = len(message_bytes)
+            if self.mess_size.cl1_2_tracker == -1 :
+                self.mess_size.cl1_2_tracker = len(message_bytes)
+
             self.channel.basic_publish(
                 exchange='',
                 routing_key=tracker_queue,
@@ -350,7 +351,7 @@ class Scheduler:
                     logger.log_info(f'End inference {batch_frame} frames.')
 
                     pbar.update(batch_frame)
-                else:
+                elif self.num_client_1 == 1 :
                     total_time = time.time() - start_time
                     self.gpu_time_2 = self.gpu_time_2 / 1000.0
                     print(f"\n [GPU time] {self.gpu_time_2} | [peak VRAM ] {self.peak_vram_2} | [peak RAM ] {self.peak_ram_2}")
@@ -359,6 +360,8 @@ class Scheduler:
                     if count == num_last:
                         break
                     continue
+                else :
+                    self.num_client_1 -= 1
             else:
                 continue
         pbar.close()

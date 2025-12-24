@@ -34,6 +34,7 @@ if __name__ == "__main__":
     address = config["rabbit"]["address"]
     username = config["rabbit"]["username"]
     password = config["rabbit"]["password"]
+
     virtual_host = config["rabbit"]["virtual-host"]
 
     src.Log.print_with_color("[>>>] Client sending registration message to server...", "red")
@@ -55,7 +56,8 @@ if __name__ == "__main__":
     connection = pika.BlockingConnection(pika.ConnectionParameters(address, 5672, f'{virtual_host}', credentials))
     channel = connection.channel()
 
-    scheduler = Scheduler(client_id, args.layer_id, channel, device , config["tracker"]["enable"])
+    scheduler = Scheduler(client_id, args.layer_id , channel, device , config["tracker"]["enable"] , num_client=config['server']['clients'])
+    print("[Debug] tracker status : ", config["tracker"]["enable"])
     client = RpcClient(client_id, args.layer_id, address, username, password, virtual_host, scheduler.inference_func, scheduler.check_compress_func, device)
     client.send_to_server(data)
     client.wait_response()

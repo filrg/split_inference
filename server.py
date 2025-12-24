@@ -1,11 +1,10 @@
 import argparse
 import sys
-import signal
+import signal, yaml
 
 from src.Server import Server
 from src.Utils import delete_old_queues
 import src.Log
-import yaml
 from src.partition.controller import Controller
 from src.partition.handle_data import Data
 from src.partition.dijkstra import Dijkstra
@@ -38,7 +37,7 @@ if __name__ == "__main__":
             cost = Data(layer_times, comm_times).run()
             dijkstra_app = Dijkstra(cost, data["name_devices"])
             split_point = get_layer_output(dijkstra_app.run())
-            delete_old_queues(address, username, password, virtual_host)
+            # delete_old_queues(address, username, password, virtual_host)
             save_log(split_point)
         else:
             split_point = get_log()

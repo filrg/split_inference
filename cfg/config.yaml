@@ -1,6 +1,6 @@
 name: YOLO
 server:
-  cut-layer: a #or b, c, d
+  cut-layer: a # a or b, c, d
   clients:
     - 2
     - 1
@@ -37,8 +37,8 @@ time_layer:
   input_shape: [1, 3, 640, 640]
 
 partition:
-  auto: False      # if set False then get [server][cut-layer]
-  re-measure: True # if set False then get result from cut_point.log
+  auto: True        # if set False then get [server][cut-layer] # set True for clean queue
+  re-measure: False # if set False then get result from cut_point.log
 
 clustering :
   mode : False
