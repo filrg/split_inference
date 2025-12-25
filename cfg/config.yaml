@@ -5,7 +5,7 @@ server:
     - 1
     - 1
   model: yolo11n
-  batch-frame: 5
+  batch-frame: 10
 model: yolo11n
 rabbit:
 #  address: 127.0.0.1
@@ -38,7 +38,7 @@ time_layer:
 
 partition:
   auto: True        # if set False then get [server][cut-layer] # set True for clean queue
-  re-measure: False # if set False then get result from cut_point.log
+  re-measure: True # if set False then get result from cut_point.log
 
 clustering :
   mode : False
