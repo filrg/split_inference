@@ -16,8 +16,8 @@ chubby_size = 10000000
 
 class Data:
  def __init__(self , layer_times , comm_times):
-  self.layer_times_2 = layer_times[0]
-  self.layer_times_3 = layer_times[1]
+  self.layer_times_2 = layer_times[1]
+  self.layer_times_3 = layer_times[0]
   self.comm_times = comm_times
   self.layer_times_2.insert(0, -1)
   self.layer_times_3.insert(0, -1)
