@@ -5,7 +5,7 @@ server:
     - 1
     - 1
   model: yolo11n
-  batch-frame: 5
+  batch-frame: 1
 model: yolo11n
 rabbit:
 #  address: 127.0.0.1
@@ -23,7 +23,7 @@ log-path: res
 control-count: 10
 debug-mode: False
 compress:
-  enable: True
+  enable: False
   num_bit: 8
 cal_map:
   enable: False
