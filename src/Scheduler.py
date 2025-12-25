@@ -49,19 +49,8 @@ class Scheduler:
         self.current_time = None
         self.previous_time =  None
 
-        self.run_head = YOLOHeadInference(
-            cfg_yaml="cfg/yolo11n.yaml",
-            sys_cfg="cfg/config.yaml",
-            weight_path="part1.pt",
-            device=self.device
-        )
-
-        self.run_tail = YOLOTailInference(
-            cfg_yaml="cfg/yolo11n.yaml",
-            sys_cfg="cfg/config.yaml",
-            weight_path="part2.pt",
-            device=self.device
-        )
+        self.run_head = None
+        self.run_tail = None
 
     def send_next_layer(self, intermediate_queue, data, logger, compress, signal='CONTINUE'):
         try:
@@ -198,6 +187,13 @@ class Scheduler:
             logger.log_error(f"[send_ori_img]: Failed to send data to tracker. Error: {e}")
 
     def first_layer(self, model, data, save_layers, batch_frame, logger, compress):
+        self.run_head = YOLOHeadInference(
+            cfg_yaml="cfg/yolo11n.yaml",
+            sys_cfg="cfg/config.yaml",
+            weight_path="part1.pt",
+            device=self.device
+        )
+
         start_time = time.time()
         input_image = []
         lst_frame = []
@@ -308,6 +304,12 @@ class Scheduler:
         logger.log_info(f"Finish Inference.")
 
     def last_layer(self, model, batch_frame, logger, compress):
+        self.run_tail = YOLOTailInference(
+            cfg_yaml="cfg/yolo11n.yaml",
+            sys_cfg="cfg/config.yaml",
+            weight_path="part2.pt",
+            device=self.device
+        )
         start_time = time.time()
         num_last = 1
         count = 0

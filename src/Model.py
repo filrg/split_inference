@@ -156,7 +156,7 @@ class YOLOHeadInference:
         cfg_yaml: str,
         sys_cfg: str,
         weight_path: str,
-        device: str | None = None,
+        device: str,
     ):
         # Device
         self.device = torch.device(
