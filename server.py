@@ -30,8 +30,7 @@ def signal_handler(sig, frame):
 if __name__ == "__main__":
     if config["partition"]["auto"] :
         if config["partition"]["re-measure"] :
-            app = Controller(config)
-            data = app.run()
+            data = Controller(config).run()
             layer_times = data["layer_times"]
             comm_times = data["comm_times"]
             cost = Data(layer_times, comm_times).run()
