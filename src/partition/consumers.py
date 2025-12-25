@@ -45,6 +45,8 @@ class MessageSender:
         self.num_round = self.config["time_layer"]["num_round"]
         self.host_name = socket.gethostname()
 
+        self.limit_size = MAX_SIZE_QUEUE / config['server']['batch-frame']
+
 
     def send_message(self , messages_dict , queue_num = 2 ):
         queue_device = self.queue_device_2
@@ -74,7 +76,7 @@ class MessageSender:
 
         for size in self.size_data :
             size_bytes = int(size * 1e6)
-            if size_bytes >= MAX_SIZE_QUEUE:    # chubby size
+            if size_bytes >= self.limit_size:    # chubby size
                 times.append(INFINITY_TIME)
                 continue
 
