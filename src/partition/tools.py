@@ -1,10 +1,10 @@
 import psutil
-import torch , yaml , json
+import torch , yaml , json , gc
 def extract_input_layer(file_name ):
-    file = "./../../cfg/" + file_name
+    file = "cfg/" + file_name
     cfg = yaml.safe_load(open(file, 'r', encoding='utf-8'))
 
-    cut_point_path = "./../../res/cut_point.log"
+    cut_point_path = "res/cut_point.log"
     with open(cut_point_path, 'r') as file:
         content = file.read()
         parsed = json.loads(content)
@@ -40,6 +40,32 @@ def extract_input_layer(file_name ):
 
 #
 # print(extract_input_layer("yolo11n.yaml"))
+
+def load_weights_optimized(model, path):
+    """Load weights and remove architecture with random weights.
+
+    Args:
+        model : model after load by DetectionModel class
+        path : path of weights ( only weights )
+
+    Return :
+        model : model with weights loaded .
+
+    """
+    print(f"[Weights] Loading {path}...")
+    try:
+        ckpt = torch.load(path, map_location='cpu', weights_only=True, mmap=True)
+    except:
+        print("[Warning] mmap failed, using standard load")
+        ckpt = torch.load(path, map_location='cpu', weights_only=True)
+
+    state_dict = ckpt['model'].state_dict() if 'model' in ckpt else ckpt
+
+    model.load_state_dict(state_dict, strict=False)
+
+    del ckpt, state_dict
+    gc.collect()
+    print("[Weights] Loaded & RAM cleaned.")
 
 
 

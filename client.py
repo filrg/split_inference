@@ -2,7 +2,6 @@ import pika
 import uuid
 import argparse
 import yaml
-
 import torch
 
 import src.Log
