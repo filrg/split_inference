@@ -9,8 +9,8 @@ from src.Utils import write_partial
 from pathlib import Path
 from src.partition.time_layers import LayerProfiler
 
-# MAX_SIZE_QUEUE = 16777216
-MAX_SIZE_QUEUE = 19777216
+MAX_SIZE_QUEUE = 16777216
+# MAX_SIZE_QUEUE = 19777216
 INFINITY_TIME = 1000000
 
 
