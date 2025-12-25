@@ -40,7 +40,8 @@ class MessageSender:
         # project_root = Path.cwd()
         # cfg_path = project_root / "cfg" / "yolo11n.yaml"
         # self.size_data = get_output_sizes(cfg_path)
-        self.size_data = LayerProfiler(config, mode="shape").run()
+        # self.size_data = LayerProfiler(config, mode="shape" ).run()
+        self.size_data = [3.125, 1.562, 3.125, 0.781, 1.562, 0.391, 0.391, 0.195, 0.195, 0.195, 0.195, 0.781, 1.172, 0.391, 1.562, 3.125, 0.781, 0.195, 0.586, 0.391, 0.098, 0.293, 0.195, 1.346]
         self.start_time = time.time()
         self.num_round = self.config["time_layer"]["num_round"]
         self.host_name = socket.gethostname()
