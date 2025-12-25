@@ -39,7 +39,7 @@ class LayerProfiler:
             self.layer_times[name] = []
         self.layer_times[name].append(elapsed)
 
-    def run(self):
+    def run(self , verbose = False):
         # Warm-up run
         with torch.no_grad():
             self.model(self.x)
@@ -61,4 +61,8 @@ class LayerProfiler:
         total_time = round(sum(avg_times.values()), 2)
         avg_times["total_time"] = total_time
 
+        if verbose:
+            print(times_store)
+
         return times_store
+
