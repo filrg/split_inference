@@ -5,7 +5,7 @@ server:
     - 1
     - 1
   model: yolo11n
-  batch-frame: 10
+  batch-frame: 15
 model: yolo11n
 rabbit:
 #  address: 127.0.0.1
