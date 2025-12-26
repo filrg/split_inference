@@ -1,17 +1,46 @@
-from src.partition.time_layers import LayerProfiler
-import yaml
-from src.Utils import get_output_sizes
+import cv2
+import torch
+import time
+from ultralytics import YOLO
+import torchvision.transforms as T
 
+VIDEO_PATH = "video.mp4"
+IMG_SIZE = 640
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-with open('cfg/config.yaml') as file:
-    config = yaml.safe_load(file)
+yolo = YOLO("yolo11n.pt")
+model = yolo.model.to(DEVICE)
+model.eval()
 
-profiler = LayerProfiler(config, mode="time")
-time_list = profiler.run()
+transform = T.ToTensor()
+cap = cv2.VideoCapture(VIDEO_PATH)
 
-print(time_list)
+times = []
 
-profiler = LayerProfiler(config, mode="shape" , unit="MB")
-shape_list = profiler.run()
+with torch.no_grad():
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-print(shape_list)
+        img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        img = cv2.resize(img, (IMG_SIZE, IMG_SIZE))
+        x = transform(img).unsqueeze(0).to(DEVICE)
+
+        if DEVICE == "cuda":
+            torch.cuda.synchronize()
+
+        t0 = time.perf_counter()
+        _ = model(x)
+
+        if DEVICE == "cuda":
+            torch.cuda.synchronize()
+
+        t1 = time.perf_counter()
+        times.append((t1 - t0) * 1000)
+
+cap.release()
+
+avg_time = sum(times) / len(times)
+print(f"Average inference time: {avg_time:.2f} ms")
+print(f"FPS: {1000 / avg_time:.2f}")
