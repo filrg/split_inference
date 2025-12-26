@@ -1,6 +1,6 @@
 name: YOLO
 server:
-  cut-layer: b #or b, c, d
+  cut-layer: c #or b, c, d
   clients:
     - 1
     - 1
