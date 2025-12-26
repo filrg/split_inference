@@ -190,7 +190,7 @@ class Scheduler:
         self.run_head = YOLOHeadInference(
             cfg_yaml="cfg/yolo11n.yaml",
             sys_cfg="cfg/config.yaml",
-            weight_path="part1.pt",
+            weight_path="part.pt",
             device=self.device
         )
 
@@ -307,7 +307,7 @@ class Scheduler:
         self.run_tail = YOLOTailInference(
             cfg_yaml="cfg/yolo11n.yaml",
             sys_cfg="cfg/config.yaml",
-            weight_path="part2.pt",
+            weight_path="part.pt",
             device=self.device
         )
         start_time = time.time()
