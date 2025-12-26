@@ -82,9 +82,11 @@ class Controller :
                     data = self.listening()
                     if data is not None :
                         signal = data["signal"]
-                        if "time_layer" in signal :
-                            signal = signal.split(" ")[1]
-                            count_devices.append(signal)
+                        if "time_layer 1" in signal :
+                            # signal = signal.split(" ")[1]
+                            # count_devices.append(signal)
+                            count_layer_times.insert(0 , data["message"])
+                        elif "time_layer 2" in signal :
                             count_layer_times.append(data["message"])
                         if len(count_devices) == 2 :
                             self.data["name_devices"] = count_devices 
