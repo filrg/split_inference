@@ -7,9 +7,9 @@ server:
   model: yolo11n
   batch-frame: 1
 rabbit:
-  address: 127.0.0.1
-  username: admin
-  password: admin
+  address: "192.168.101.91"
+  username: "dai"
+  password: "dai"
   virtual-host: /
 
 data: video.mp4
