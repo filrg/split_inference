@@ -30,7 +30,7 @@ with torch.no_grad():
         if DEVICE == "cuda":
             torch.cuda.synchronize()
 
-        t0 = time.perf_counter()
+        t0 = time.perf_coun ter()
         _ = model(x)
 
         if DEVICE == "cuda":
