@@ -6,7 +6,7 @@ from src.Model import SplitDetectionPredictor
 from src.Compress import Encoder,Decoder
 from src.Utils import load_ground_truth, compute_map
 import os
-import copy
+import copy , time
 
 class Scheduler:
     def __init__(self, client_id, layer_id, channel, device):
@@ -17,6 +17,10 @@ class Scheduler:
         self.intermediate_queue = f"intermediate_queue_{self.layer_id}"
         self.channel.queue_declare(self.intermediate_queue, durable=False)
         self.size_message = None
+
+        self.FPSs = []
+        self.current_time = None
+        self.previous_time = None
 
     def send_next_layer(self, intermediate_queue, data, logger, compress):
         if data != 'STOP':
@@ -145,8 +149,15 @@ class Scheduler:
                     logger.log_info(f'Start inference {batch_frame} frames.')
                     predictions = model.forward_tail(y)
 
-                    yolo_results = predictor.postprocess(predictions, y["img_shape"], y["orig_imgs_shape"],
-                                                         y["orig_imgs"])
+                    self.current_time = time.time()
+                    if self.previous_time is not None:
+                        delta = (self.current_time - self.previous_time) / batch_frame
+                        fps = 1 / delta
+                        self.FPSs.append(round(fps, 3))
+                    self.previous_time = self.current_time
+
+                    # yolo_results = predictor.postprocess(predictions, y["img_shape"], y["orig_imgs_shape"],
+                    #                                      y["orig_imgs"])
 
                     # for idx, result in enumerate(yolo_results):
                     #     annotated_frame = result.plot()
@@ -171,6 +182,7 @@ class Scheduler:
                 continue
         pbar.close()
         logger.log_info(f"Finish Inference.")
+        print(f"[FPS with batch size {batch_frame} ] : {self.FPSs}")
 
     def middle_layer(self, model):
         pass
