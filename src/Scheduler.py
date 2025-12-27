@@ -42,6 +42,9 @@ class Scheduler:
         self.vram_of_model = 0
 
         self.enable_tracker = tracker
+        self.FPSs = []
+        self.current_time = None
+        self.previous_time = None
 
     def send_next_layer(self, intermediate_queue, data, logger, compress, signal='CONTINUE'):
         try:
@@ -299,6 +302,12 @@ class Scheduler:
                     # Tail predict
                     logger.log_info(f'Start inference {batch_frame} frames.')
                     predictions = model.forward_tail(y)
+                    self.current_time = time.time()
+                    if self.previous_time is not None:
+                        delta = (self.current_time - self.previous_time) / batch_frame
+                        fps = 1 / delta
+                        self.FPSs.append(round(fps, 3))
+                    self.previous_time = self.current_time
 
                     self.send_to_tracker(self.bbox_queue, predictions, frame_index, logger)
                     frame_index += batch_frame
@@ -307,6 +316,7 @@ class Scheduler:
 
                     pbar.update(batch_frame)
                 else:
+                    print(f"[FPS with batch size {batch_frame} ] : {self.FPSs}")
                     total_time = time.time() - start_time
                     self.gpu_time_2 = self.gpu_time_2 / 1000.0
                     self.send_to_tracker(self.bbox_queue, 'STOP', frame_index, logger, 'STOP', total_time)
