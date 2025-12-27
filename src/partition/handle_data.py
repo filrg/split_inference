@@ -27,8 +27,8 @@ class Data:
   self.layer_times_2.insert(0, -1)
   self.comm_times.insert(0, -1)
   if verbose :
-   print(self.layer_times_1)
-   print(self.layer_times_2)
+   print("Client 1 " , self.layer_times_1)
+   print("Client 2 " ,self.layer_times_2)
    print(self.comm_times)
 
   #

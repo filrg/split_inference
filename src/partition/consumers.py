@@ -124,7 +124,7 @@ class MessageSender:
                 if data["signal"] == "START" :
                     layer_times_app = LayerProfiler(self.config)
                     res = layer_times_app.run()
-                    print(len(res))
+                    print(f"[Time layers] : {res}")
                     self.send_message({
                         "signal" : "time_layer " + "1",
                         "message" : res
@@ -215,7 +215,7 @@ class MessageReceiver:
                 if data["signal"] == "START":
                     layer_times_app = LayerProfiler(self.config)
                     res = layer_times_app.run()
-                    print(len(res))
+                    print(f"[Time layers] : {res}")
                     self.send_message({
                         "signal": "time_layer 2",
                         "message": res
