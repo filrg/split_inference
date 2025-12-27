@@ -1,151 +1,103 @@
-import time
-import torch
+import numpy as np
+import torch , os , yaml, gc , time
+import torch.nn as nn
+from torch import Tensor
 from ultralytics import YOLO
+from ultralytics.engine.results import Results
+from ultralytics.models.yolo.detect.predict import DetectionPredictor
+from ultralytics.utils import ops , nms
+from ultralytics.nn.tasks import DetectionModel
 
+from src.partition.tools import extract_input_layer , load_weights_optimized
+class YOLOHeadInference:
+    def __init__(
+        self,
+        cfg_yaml: str,
+        sys_cfg: str,
+        weight_path: str,
+        device: str,
+    ):
+        # Device
+        self.device = torch.device(
+            device if device else ("cuda" if torch.cuda.is_available() else "cpu")
+        )
+        # print(f"[DEVICE] {self.device}")
 
-def profile_yolo_layers(
-    model_path="yolo11n.pt",
-    input_shape=(1, 3, 640, 640),
-    num_runs=30,
-    warmup=5,
-    device=None,
-    fp16=True,
-    move_output_to_cpu=True,
-):
-    """
-    Returns:
-        layer_times  : list[float]  # ms, prefix-delta
-        layer_outputs: list         # output từng layer
-        layer_shapes : list         # shape từng layer
-    """
+        # System config
+        with open(sys_cfg) as f:
+            self.config = yaml.safe_load(f)
 
-    # -------------------------
-    # Device
-    # -------------------------
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Output layers
+        self.output_layers = extract_input_layer("yolo11n.yaml")["output"]
+        # print(f"[Output layers] {self.output_layers}")
 
-    # -------------------------
-    # Load YOLO model
-    # -------------------------
-    model = YOLO(model_path).model
-    model.eval().to(device)
-    if fp16:
-        model = model.half()
+        # Load model
+        with open(cfg_yaml, "r", encoding="utf-8") as f:
+            model_cfg = yaml.safe_load(f)
 
-    # -------------------------
-    # Dummy input (fake image)
-    # -------------------------
-    x0 = torch.randn(*input_shape, device=device)
-    if fp16:
-        x0 = x0.half()
+        self.model = DetectionModel(model_cfg, verbose=False)
 
-    # ============================================================
-    # 1) FORWARD 1 LẦN → LẤY OUTPUT + SHAPE TỪNG LAYER (YOLO GRAPH)
-    # ============================================================
-    layer_outputs = []
-    layer_shapes = []
+        # Load weights
+        load_weights_optimized(self.model, weight_path)
 
-    outputs_cache = []
+        # Finalize model
+        self.model.to(self.device)
+        self.model.eval()
+        self.model.half()   # model FP16
 
-    with torch.no_grad():
-        x = x0
-        for i, m in enumerate(model.model):
-            # xử lý graph (from)
-            if m.f != -1:
-                if isinstance(m.f, int):
-                    x = outputs_cache[m.f]
-                else:
-                    x = [outputs_cache[j] for j in m.f]
+        self.time_layers = []
+        self.time_start = time.perf_counter_ns()
+        # print(self.time_start)
 
-            x = m(x)
-            outputs_cache.append(x)
+    # Input preparation (FP16 + device sync)
+    def _prepare_input(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Ensure input tensor is on correct device and FP16
+        """
+        if x.device != self.device:
+            x = x.to(self.device, non_blocking=True)
 
-            # ----- lưu output -----
-            if isinstance(x, (list, tuple)):
-                out = tuple(
-                    o.detach().cpu() if move_output_to_cpu else o
-                    for o in x
-                    if torch.is_tensor(o)
-                )
-                layer_outputs.append(out)
-                layer_shapes.append(
-                    [tuple(o.shape) for o in x if torch.is_tensor(o)]
-                )
-            else:
-                out = x.detach().cpu() if move_output_to_cpu else x
-                layer_outputs.append(out)
-                layer_shapes.append(tuple(x.shape))
+        if x.dtype != torch.float16:
+            x = x.half()
 
-    # ============================================================
-    # 2) PREFIX–DELTA LATENCY (ĐO THỜI GIAN TỪNG LAYER – CHUẨN NHẤT)
-    # ============================================================
-    def run_prefix(end_idx):
-        outputs = []
-        x = x0
-        for i, m in enumerate(model.model[: end_idx + 1]):
-            if m.f != -1:
-                if isinstance(m.f, int):
-                    x = outputs[m.f]
-                else:
-                    x = [outputs[j] for j in m.f]
-            x = m(x)
-            outputs.append(x)
         return x
 
-    def measure_prefix_latency(end_idx):
-        # warmup
-        with torch.no_grad():
-            for _ in range(warmup):
-                run_prefix(end_idx)
+    # Optimized forward using hooks
+    def forward(self, x: torch.Tensor):
+        """
+        x: input tensor (any dtype/device)
+        """
+        x = self._prepare_input(x)
 
-        torch.cuda.synchronize()
-        t0 = time.perf_counter()
+        feature_maps = {}
 
-        with torch.no_grad():
-            for _ in range(num_runs):
-                run_prefix(end_idx)
+        def hook_fn(layer_id):
+            def fn(_, __, out):
+                feature_maps[layer_id] = out
+            return fn
 
-        torch.cuda.synchronize()
-        t1 = time.perf_counter()
+        handles = [
+            self.model.model[i].register_forward_hook(hook_fn(i))
+            for i in self.output_layers
+        ]
 
-        return (t1 - t0) * 1000 / num_runs  # ms
+        with torch.inference_mode():
+            _ = self.model(x)
+            if self.device.type == "cuda":
+                torch.cuda.synchronize()
 
-    layer_times = []
-    prev_prefix_time = 0.0
+        for h in handles:
+            h.remove()
 
-    for i in range(len(model.model)):
-        t_prefix = measure_prefix_latency(i)
-        delta = max(0 , t_prefix - prev_prefix_time)
-        layer_times.append(round(delta, 4))
+        print((time.perf_counter_ns() - self.time_start) / 1000)
+        return feature_maps
 
-        print(
-            f"Layer {i:02d} | "
-            f"time = {delta:7.3f} ms | "
-            f"shape = {layer_shapes[i]}"
-        )
-
-        prev_prefix_time = t_prefix
-
-    return layer_times, layer_outputs, layer_shapes
-
-
-# ============================================================
-# MAIN
-# ============================================================
 if __name__ == "__main__":
-    layer_times, layer_outputs, layer_shapes = profile_yolo_layers(
-        model_path="yolo11n.pt",
-        input_shape=(1, 3, 640, 640),
-        num_runs=30,
-        fp16=True,
-        move_output_to_cpu=True,  # BẮT BUỘC nếu Jetson
+    dummy_image = torch.randn(1, 3, 640, 640)
+    run = YOLOHeadInference(
+        cfg_yaml="cfg/yolo11n.yaml",
+        sys_cfg="cfg/config.yaml",
+        weight_path="part.pt",
+        device="cuda"
     )
-
-    # print("\n=== SUMMARY ===")
-    # for i in range(len(layer_times)):
-    #     print(
-    #         f"Layer {i:02d}: "
-    #         f"time = {layer_times[i]:6.3f} ms | "
-    #         f"shape = {layer_shapes[i]}"
-    #     )
+    run.forward(dummy_image)
