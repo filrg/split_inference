@@ -1,10 +1,8 @@
 import pickle
-
-import numpy as np
 from tqdm import tqdm
 import torch
 import cv2
-from src.Model import SplitDetectionPredictor , YOLOHeadInference , YOLOTailInference
+from src.Model import SplitDetectionPredictor
 from src.Compress import Encoder, Decoder
 from src.Utils import load_ground_truth, compute_map, format_size
 import os
@@ -22,14 +20,13 @@ class MessageSize:
 
 
 class Scheduler:
-    def __init__(self, client_id, layer_id, channel, device, tracker=True, num_client=[1, 1]):
+    def __init__(self, client_id, layer_id, channel, device, tracker=True):
         self.client_id = client_id
         self.layer_id = layer_id
         self.channel = channel
         self.device = device
         self.intermediate_queue = f"intermediate_queue_{self.layer_id}"
         self.channel.queue_declare(self.intermediate_queue, durable=False)
-        self.num_client_1 = num_client[0]
 
         self.bbox_queue = "bbox_queue"
         self.ori_img_queue = "ori_img_queue"
@@ -45,44 +42,20 @@ class Scheduler:
         self.vram_of_model = 0
 
         self.enable_tracker = tracker
-        self.FPSs = []
-        self.current_time = None
-        self.previous_time =  None
-
-        self.run_head = None
-        self.run_tail = None
 
     def send_next_layer(self, intermediate_queue, data, logger, compress, signal='CONTINUE'):
         try:
             if signal != 'STOP':
                 if compress["enable"]:
-                    # print(f"[CHECK TYPE before of layers output] {type(data["layers_output"])}")
-                    # data["layers_output"] = [t.cpu().numpy() if isinstance(t, torch.Tensor) else None for t in
-                    #                          data["layers_output"]]
-                    # # print(f"[CHECK TYPE of layers output] {type(data["layers_output"])}")
-                    # # print(f"[CHECK TYPE of layers output index 0 ] {type(data["layers_output"][0])}")
-                    # logger.log_info(f'Start Encode.')
-                    # data["layers_output"], data["shape"] = Encoder(data_output=data["layers_output"],
-                    #                                                num_bits=compress["num_bit"])
-                    # print("[INFO] data shape " , data["shape"])
-
-                    for key , val in data.items():
-                        if isinstance(val, torch.Tensor):
-                            new_val = val.cpu().numpy()
-                            data[key] = Encoder(new_val , compress["num_bit"])
-                            # data[key][1] = torch.stack(data[key][1] , dim=0 )
-
+                    data["layers_output"] = [t.cpu().numpy() if isinstance(t, torch.Tensor) else None for t in
+                                             data["layers_output"]]
+                    logger.log_info(f'Start Encode.')
+                    data["layers_output"], data["shape"] = Encoder(data_output=data["layers_output"],
+                                                                   num_bits=compress["num_bit"])
                     logger.log_info(f'End Encode.')
                 else:
-                    for key , val in data.items():
-                        if isinstance(val, torch.Tensor):
-                            data[key] = val.cpu()
-                    # data["layers_output"] = [t.cpu() if isinstance(t, torch.Tensor) else None for t in
-                    #                          data["layers_output"]]
-
-                # print(f"INFO data keys before send {data.keys()} ")
-                # print(f"[CHECK type data[4][1] {type(data[4][1])}")
-                # print(f"[CHECK info data[4][1]{data[4][1]}")
+                    data["layers_output"] = [t.cpu() if isinstance(t, torch.Tensor) else None for t in
+                                             data["layers_output"]]
                 message = pickle.dumps({
                     "action": "OUTPUT",
                     "data": data
@@ -167,7 +140,7 @@ class Scheduler:
                 message = {
                     "signal": 'STOP',
                     "total_time": total_time,
-                    "size_mess2tracker": format_size(self.mess_size.cl1_2_tracker),
+                    "size_mess2tracker": format_size(self.self.mess_size.cl1_2_tracker),
                     "size_mess2cl2": format_size(self.mess_size.cl1_2_cl2),
                     "GPU_time": str(round(self.gpu_time_1, 5)) + "s",
                     "peak_RAM": str(round(self.peak_ram_1, 3)) + "MB",
@@ -175,9 +148,8 @@ class Scheduler:
                 }
 
             message_bytes = pickle.dumps(message)
-            if self.mess_size.cl1_2_tracker == -1:
-                self.mess_size.cl1_2_tracker = len(message_bytes)
-
+            if self.self.mess_size.cl1_2_tracker == -1:
+                self.self.mess_size.cl1_2_tracker = len(message_bytes)
             self.channel.basic_publish(
                 exchange='',
                 routing_key=tracker_queue,
@@ -187,13 +159,6 @@ class Scheduler:
             logger.log_error(f"[send_ori_img]: Failed to send data to tracker. Error: {e}")
 
     def first_layer(self, model, data, save_layers, batch_frame, logger, compress):
-        self.run_head = YOLOHeadInference(
-            cfg_yaml="cfg/yolo11n.yaml",
-            sys_cfg="cfg/config.yaml",
-            weight_path="part.pt",
-            device=self.device
-        )
-
         start_time = time.time()
         input_image = []
         lst_frame = []
@@ -236,14 +201,12 @@ class Scheduler:
                 self.send_next_layer(self.intermediate_queue, y, logger, compress, signal='STOP')
                 self.send_ori_img(self.ori_img_queue, y, frame_index, (0, 0), logger, signal='STOP',
                                   total_time=total_time)
-                print(
-                    f"\n[GPU time ] {self.gpu_time_1} | [peak VRAM ] {self.peak_vram_1} | [peak RAM ] {self.peak_ram_1}")
                 break
 
             h, w, c = frame.shape
             orig_img_size = (h, w)
             # make border
-            size = max(h, w)
+            # size = max(h, w)
             if h > w:
                 border_size = h - w
                 frame = cv2.copyMakeBorder(frame, 0, 0, 0, border_size, cv2.BORDER_CONSTANT, value=(0, 0, 0))
@@ -263,30 +226,25 @@ class Scheduler:
                 input_image = torch.stack(input_image)
                 logger.log_info(f'Start inference {batch_frame} frames.')
                 input_image = input_image.to(self.device)
+                # Prepare data
+                predictor.setup_source(input_image)
+                for predictor.batch in predictor.dataset:
+                    path, input_image, _ = predictor.batch
+
+                # Preprocess
+                preprocess_image = predictor.preprocess(input_image)
 
                 # Head predictf
-                y = self.run_head.forward(input_image)
-
-                ram_current = process.memory_info().rss / 1024 ** 2
-                self.peak_ram_1 = max(self.peak_ram_1, ram_current)
-                # print(f"\n[RAM] {ram_current} | [peak RAM] : {self.peak_ram_1}")
+                y = model.forward_head(preprocess_image, save_layers)
 
                 logger.log_info(f'End inference {batch_frame} frames.')
 
                 # y["img_shape"] = preprocess_image.shape[2:]
-                # print(f"[DEBUG] [INFO img_shape {y["img_shape"]}")
                 # y["orig_imgs_shape"] = input_image.shape[2:]
                 # y["orig_imgs"] = copy.copy(input_image)
-
+                #
                 # y["width"] = width
                 # y["height"] = height
-
-
-                # print(f"[DEBUG] type of y {type(y)}")
-                # print(f"[DEBUG] keys of y {y.keys()}")
-                # print(f"[DEBUG] type of layers_output {type(y['layers_output'])}")
-                # print(f"[DEBUG] len of layers_output {len(y['layers_output'])}")
-                # print(f"[DEBUG] type of layers_output index 1  {type(y['layers_output'][1])}")
 
                 self.send_next_layer(self.intermediate_queue, y, logger, compress)
                 logger.log_info('Send a message.')
@@ -297,19 +255,13 @@ class Scheduler:
             else:
                 continue
 
-        print(f'size message 1 -> 2 : {self.mess_size.cl1_2_cl2 // 1024 // 1024} MB.')
+        print(f'size message: {self.mess_size.cl1_2_cl2} bytes.')
         logger.log_info(f'size message: {self.mess_size.cl1_2_cl2} bytes.')
         cap.release()
         pbar.close()
         logger.log_info(f"Finish Inference.")
 
     def last_layer(self, model, batch_frame, logger, compress):
-        self.run_tail = YOLOTailInference(
-            cfg_yaml="cfg/yolo11n.yaml",
-            sys_cfg="cfg/config.yaml",
-            weight_path="part.pt",
-            device=self.device
-        )
         start_time = time.time()
         num_last = 1
         count = 0
@@ -337,32 +289,16 @@ class Scheduler:
 
                     if compress["enable"]:
                         logger.log_info(f'Start Decode.')
+                        y["layers_output"] = Decoder(y["layers_output"], y["shape"])
+                        logger.log_info(f'End Decode.')
+                        y["layers_output"] = [torch.from_numpy(t) if t is not None else None for t in
+                                              y["layers_output"]]
 
-                        for key , val in y.items():
-                            # print("stack" , np.stack(val[1] , axis=0))
-                            # shape = (batch_frame ,) + val[1][0]
-                            # print("TYPE VAL 1" , type(val[1]))
-                            # print("shape " , shape , type(shape))
-                            # a_s = np.stack(shape)
-                            # print(a_s , type(a_s))
-                            decoder_val = Decoder(val[0] , np.array(val[1]))
-                            # print("DEBUG len decoder val" , len(decoder_val))
-                            y[key] = torch.from_numpy(np.array(decoder_val))
-
-                    for key , val in y.items():
-                        y[key] = val.to(self.device)
+                    y["layers_output"] = [t.to(self.device) if t is not None else None for t in y["layers_output"]]
 
                     # Tail predict
                     logger.log_info(f'Start inference {batch_frame} frames.')
-                    predictions = self.run_tail.forward(y)
-                    self.current_time = time.time()
-                    if self.previous_time is not None :
-                        delta = (self.current_time - self.previous_time) / batch_frame
-                        fps = 1 / delta
-                        self.FPSs.append(round(fps ,3))
-                    self.previous_time = self.current_time
-
-                    # print(f"[DEBUG] type of predictions {type(predictions)}")
+                    predictions = model.forward_tail(y)
 
                     self.send_to_tracker(self.bbox_queue, predictions, frame_index, logger)
                     frame_index += batch_frame
@@ -370,28 +306,18 @@ class Scheduler:
                     logger.log_info(f'End inference {batch_frame} frames.')
 
                     pbar.update(batch_frame)
-                elif self.num_client_1 == 1:
-                    print(f"[FPS with batch size {batch_frame} ] : {self.FPSs}")
+                else:
                     total_time = time.time() - start_time
                     self.gpu_time_2 = self.gpu_time_2 / 1000.0
-                    print(
-                        f"\n [GPU time] {self.gpu_time_2} | [peak VRAM ] {self.peak_vram_2} | [peak RAM ] {self.peak_ram_2}")
                     self.send_to_tracker(self.bbox_queue, 'STOP', frame_index, logger, 'STOP', total_time)
                     count += 1
                     if count == num_last:
                         break
                     continue
-                else:
-                    self.num_client_1 -= 1
             else:
                 continue
         pbar.close()
         logger.log_info(f"Finish Inference.")
-
-    def unwrap_pred(self , pred):
-        if isinstance(pred, tuple):
-            pred = pred[0]
-        return pred
 
     def middle_layer(self, model):
         pass
@@ -577,3 +503,4 @@ class Scheduler:
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
         return total_frames
+

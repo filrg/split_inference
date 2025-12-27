@@ -33,7 +33,7 @@ class SplitDetectionModel(nn.Module):
 
     def forward_head(self, x, output_from=()):
         # print(self.output)
-        print(f"[DEBUG] [check output] {output_from} [check save] {self.save}")
+        # print(f"[DEBUG] [check output] {output_from} [check save] {self.save}")
         y, dt = [], []  # outputs
         for i, m in enumerate(self.head):
             if m.f != -1:  # if not from previous layer

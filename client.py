@@ -55,7 +55,7 @@ if __name__ == "__main__":
     connection = pika.BlockingConnection(pika.ConnectionParameters(address, 5672, f'{virtual_host}', credentials))
     channel = connection.channel()
 
-    scheduler = Scheduler(client_id, args.layer_id , channel, device , config["tracker"]["enable"] , num_client=config['server']['clients'])
+    scheduler = Scheduler(client_id, args.layer_id , channel, device , config["tracker"]["enable"] ) #, num_client=config['server']['clients'])
     print("[Debug] tracker status : ", config["tracker"]["enable"])
     client = RpcClient(client_id, args.layer_id, address, username, password, virtual_host, scheduler.inference_func, scheduler.check_compress_func, device)
     client.send_to_server(data)
