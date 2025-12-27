@@ -86,6 +86,7 @@ class Controller :
                             signal = signal.split(" ")[1]
                             count_devices.append(signal)
                             count_layer_times.append(data["message"])
+                            # print(f"[list device {count_clients}")
                         if len(count_devices) == 2 :
                             self.data["name_devices"] = count_devices 
                             self.data["layer_times"] = count_layer_times
