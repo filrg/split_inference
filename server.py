@@ -34,9 +34,9 @@ if __name__ == "__main__":
             layer_times = data["layer_times"]
             comm_times = data["comm_times"]
             cost = Data(layer_times, comm_times , data["name_devices"]).run()
-            print(layer_times[0])
-            print(layer_times[1])
-            print(comm_times)
+            # print(layer_times[0])
+            # print(layer_times[1])
+            # print(comm_times)
             dijkstra_app = Dijkstra(cost, data["name_devices"])
             split_point = get_layer_output(dijkstra_app.run())
             # delete_old_queues(address, username, password, virtual_host)

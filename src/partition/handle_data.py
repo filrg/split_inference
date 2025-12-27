@@ -15,7 +15,7 @@ chubby_size = 10000000
 #  152.32, 59023.33, 116022.15]
 
 class Data:
- def __init__(self , layer_times , comm_times , count_devices):
+ def __init__(self , layer_times , comm_times , count_devices, verbose= False):
   if count_devices[0] == 'sender':
    self.layer_times_1 = layer_times[0]
    self.layer_times_2 = layer_times[1]
@@ -26,6 +26,10 @@ class Data:
   self.layer_times_1.insert(0, -1)
   self.layer_times_2.insert(0, -1)
   self.comm_times.insert(0, -1)
+  if verbose :
+   print(self.layer_times_1)
+   print(self.layer_times_2)
+   print(self.comm_times)
 
   #
   self.capacity = len(self.layer_times_1)
