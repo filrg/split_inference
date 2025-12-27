@@ -16,12 +16,12 @@ chubby_size = 10000000
 
 class Data:
  def __init__(self , layer_times , comm_times , count_devices, verbose= False):
-  if count_devices[0] == 'sender':
-   print('case 1')
+  if count_devices[0] == '1':
+   # print('case 1')
    self.layer_times_1 = layer_times[0]
    self.layer_times_2 = layer_times[1]
   else :
-   print('case 2')
+   # print('case 2')
    self.layer_times_1 = layer_times[1]
    self.layer_times_2 = layer_times[0]
   self.comm_times = comm_times
