@@ -5,15 +5,15 @@ server:
     - 1
     - 1
   model: yolo11n
-  batch-frame: 1
+  batch-frame: 5
 model: yolo11n
 rabbit:
-  address: 127.0.0.1
-  username: guest
-  password: guest
-#  address: "192.168.101.91"
-#  username: "dai"
-#  password: "dai"
+#  address: 127.0.0.1
+#  username: guest
+#  password: guest
+  address: "192.168.101.91"
+  username: "dai"
+  password: "dai"
   virtual-host: /
   queue_device_1: "device1"
   queue_device_2: "device2"
@@ -23,7 +23,7 @@ log-path: res
 control-count: 10
 debug-mode: False
 compress:
-  enable: False
+  enable: True
   num_bit: 8
 cal_map:
   enable: False
