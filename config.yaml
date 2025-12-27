@@ -5,7 +5,7 @@ server:
     - 1
     - 1
   model: yolo11n
-  batch-frame: 1
+  batch-frame: 5
 rabbit:
   address: "192.168.101.91"
   username: "dai"
@@ -17,7 +17,7 @@ log-path: .
 control-count: 10
 debug-mode: False
 compress:
-  enable: False
+  enable: True
   num_bit: 8
 cal_map:
   enable: False
