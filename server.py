@@ -33,7 +33,7 @@ if __name__ == "__main__":
             data = Controller(config).run()
             layer_times = data["layer_times"]
             comm_times = data["comm_times"]
-            cost = Data(layer_times, comm_times , data["name_devices"]).run()
+            cost = Data(layer_times, comm_times , data["name_devices"] , verbose=True).run()
             # print(layer_times[0])
             # print(layer_times[1])
             # print(comm_times)
