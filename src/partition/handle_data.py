@@ -41,9 +41,14 @@ class Data:
 
  def get_test_bed_cost(self):
   for i in range(1, self.capacity - 1):
-   self.cost[i][i + 1] = self.layer_times_1[i + 1]
-   self.cost[i + self.num_points][i + self.num_points + 1] = self.layer_times_2[i + 1]
-   self.cost[i][i + self.num_points + 1] = self.comm_times[i] + self.layer_times_2[i + 1]
+   # option 1
+   # self.cost[i][i + 1] = self.layer_times_1[i + 1]
+   # self.cost[i + self.num_points][i + self.num_points + 1] = self.layer_times_2[i + 1]
+   # self.cost[i][i + self.num_points + 1] = self.comm_times[i] + self.layer_times_2[i + 1]
+   # option 2
+   self.cost[i][i + 1] = 0
+   self.cost[i + self.num_points][i + self.num_points + 1] = 0
+   self.cost[i][i + self.num_points + 1] = self.comm_times[i - 1] + max(self.cost_1, self.cost_2)
 
  def run(self):
   self.get_test_bed_cost()
