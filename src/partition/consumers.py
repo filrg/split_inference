@@ -8,6 +8,7 @@ import socket
 from src.Utils import write_partial
 from pathlib import Path
 from src.partition.time_layers import LayerProfiler
+from src.partition.tools import get_output_from_json
 
 MAX_SIZE_QUEUE = 16777216
 # MAX_SIZE_QUEUE = 19777216
@@ -37,17 +38,13 @@ class MessageSender:
         self.channel.queue_declare(queue=self.queue_device_2 , durable= True)
         self.channel.queue_declare(queue=self.queue_device_3, durable=True)
 
-        # project_root = Path.cwd()
-        # cfg_path = project_root / "cfg" / "yolo11n.yaml"
-        # self.size_data = get_output_sizes(cfg_path)
-        # self.size_data = LayerProfiler(config, mode="shape" ).run()
-        self.size_data = [3.125, 1.562, 3.125, 0.781, 1.562, 0.391, 0.391, 0.195, 0.195, 0.195, 0.195, 0.781, 1.172, 0.391, 1.562, 3.125, 0.781, 0.195, 0.586, 0.391, 0.098, 0.293, 0.195, 1.346]
+        self.size_data = get_output_from_json(config=config)
         self.start_time = time.time()
         self.num_round = self.config["time_layer"]["num_round"]
         self.host_name = socket.gethostname()
 
-        self.limit_size = MAX_SIZE_QUEUE / config['server']['batch-frame']
-
+        self.limit_size = MAX_SIZE_QUEUE
+        self.batch_size = config['server']['batch-frame']
 
     def send_message(self , messages_dict , queue_num = 2 ):
         queue_device = self.queue_device_2
@@ -124,6 +121,7 @@ class MessageSender:
                 if data["signal"] == "START" :
                     layer_times_app = LayerProfiler(self.config)
                     res = layer_times_app.run()
+                    res = [ x * self.batch_size for x in res]
                     print(f"[Time layers] : {res}")
                     self.send_message({
                         "signal" : "time_layer " + "1",
@@ -177,6 +175,7 @@ class MessageReceiver:
         self.channel.queue_declare(queue=self.queue_device_2, durable=True)
 
         self.host_name = socket.gethostname()
+        self.batch_size = config['server']['batch-frame']
 
     def send_message(self, messages_dict):
         self.channel.basic_publish(exchange='',
@@ -215,6 +214,7 @@ class MessageReceiver:
                 if data["signal"] == "START":
                     layer_times_app = LayerProfiler(self.config)
                     res = layer_times_app.run()
+                    res = [x * self.batch_size for x in res]
                     print(f"[Time layers] : {res}")
                     self.send_message({
                         "signal": "time_layer 2",

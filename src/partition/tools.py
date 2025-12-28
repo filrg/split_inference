@@ -67,5 +67,13 @@ def load_weights_optimized(model, path):
     gc.collect()
     print("[Weights] Loaded & RAM cleaned.")
 
+def get_output_from_json(config , path ='res/size_output_layers.json'):
+    with open(path, "r", encoding="utf-8") as f:
+        data =  json.load(f)[config['server']['batch-frame']-1]
+    if config['compress']['enable'] :
+        return data['compress']
+    else :
+        return data['non-compress']
+
 
 
