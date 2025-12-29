@@ -1,3 +1,5 @@
+import time
+
 import torch
 from ultralytics import YOLO
 
@@ -40,6 +42,7 @@ ender = torch.cuda.Event(enable_timing=True)
 times_ms = []
 
 print('start inference !')
+start = time.time()
 with torch.no_grad():
     for _ in range(RUNS):
         starter.record()
@@ -48,6 +51,7 @@ with torch.no_grad():
         torch.cuda.synchronize()
         times_ms.append(starter.elapsed_time(ender))  # milliseconds
 
+print(time.time() - start)
 print('inference done !')
 avg_ms = sum(times_ms) / len(times_ms)
 fps = 1000.0 / avg_ms
