@@ -24,6 +24,7 @@ dummy = torch.randn(1, 3, IMG_SIZE, IMG_SIZE, device=DEVICE).half()
 # -------------------------
 # Warm-up
 # -------------------------
+print('start warm-up !!!')
 with torch.no_grad():
     for _ in range(WARMUP):
         _ = model.model(dummy)
