@@ -1,103 +1,56 @@
-import numpy as np
-import torch , os , yaml, gc , time
-import torch.nn as nn
-from torch import Tensor
+import torch
+import time
 from ultralytics import YOLO
-from ultralytics.engine.results import Results
-from ultralytics.models.yolo.detect.predict import DetectionPredictor
-from ultralytics.utils import ops , nms
-from ultralytics.nn.tasks import DetectionModel
 
-from src.partition.tools import extract_input_layer , load_weights_optimized
-class YOLOHeadInference:
-    def __init__(
-        self,
-        cfg_yaml: str,
-        sys_cfg: str,
-        weight_path: str,
-        device: str,
-    ):
-        # Device
-        self.device = torch.device(
-            device if device else ("cuda" if torch.cuda.is_available() else "cpu")
-        )
-        # print(f"[DEVICE] {self.device}")
+# -------------------------
+# Config
+# -------------------------
+MODEL_PATH = "yolo11n.pt"
+IMG_SIZE = 640
+WARMUP = 20
+RUNS = 100
+DEVICE = "cuda"
 
-        # System config
-        with open(sys_cfg) as f:
-            self.config = yaml.safe_load(f)
+# -------------------------
+# Load model
+# -------------------------
+model = YOLO(MODEL_PATH)
+model.to(DEVICE)
+model.model.half()          # FP16
+model.model.eval()
 
-        # Output layers
-        self.output_layers = extract_input_layer("yolo11n.yaml")["output"]
-        # print(f"[Output layers] {self.output_layers}")
+# Dummy input
+dummy = torch.randn(1, 3, IMG_SIZE, IMG_SIZE, device=DEVICE).half()
 
-        # Load model
-        with open(cfg_yaml, "r", encoding="utf-8") as f:
-            model_cfg = yaml.safe_load(f)
+# -------------------------
+# Warm-up (important!)
+# -------------------------
+with torch.no_grad():
+    for _ in range(WARMUP):
+        _ = model.model(dummy)
 
-        self.model = DetectionModel(model_cfg, verbose=False)
+torch.cuda.synchronize()
 
-        # Load weights
-        load_weights_optimized(self.model, weight_path)
+# -------------------------
+# Benchmark
+# -------------------------
+times = []
 
-        # Finalize model
-        self.model.to(self.device)
-        self.model.eval()
-        self.model.half()   # model FP16
+with torch.no_grad():
+    for _ in range(RUNS):
+        start = time.time()
+        _ = model.model(dummy)
+        torch.cuda.synchronize()
+        end = time.time()
+        times.append(end - start)
 
-        self.time_layers = []
-        self.time_start = time.perf_counter_ns()
-        # print(self.time_start)
+avg_time = sum(times) / len(times)
+fps = 1.0 / avg_time
 
-    # Input preparation (FP16 + device sync)
-    def _prepare_input(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Ensure input tensor is on correct device and FP16
-        """
-        if x.device != self.device:
-            x = x.to(self.device, non_blocking=True)
-
-        if x.dtype != torch.float16:
-            x = x.half()
-
-        return x
-
-    # Optimized forward using hooks
-    def forward(self, x: torch.Tensor):
-        """
-        x: input tensor (any dtype/device)
-        """
-        x = self._prepare_input(x)
-
-        feature_maps = {}
-
-        def hook_fn(layer_id):
-            def fn(_, __, out):
-                feature_maps[layer_id] = out
-            return fn
-
-        handles = [
-            self.model.model[i].register_forward_hook(hook_fn(i))
-            for i in self.output_layers
-        ]
-
-        with torch.inference_mode():
-            _ = self.model(x)
-            if self.device.type == "cuda":
-                torch.cuda.synchronize()
-
-        for h in handles:
-            h.remove()
-
-        print((time.perf_counter_ns() - self.time_start) / 1000)
-        return feature_maps
-
-if __name__ == "__main__":
-    dummy_image = torch.randn(1, 3, 640, 640)
-    run = YOLOHeadInference(
-        cfg_yaml="cfg/yolo11n.yaml",
-        sys_cfg="cfg/config.yaml",
-        weight_path="part.pt",
-        device="cuda"
-    )
-    run.forward(dummy_image)
+print("=================================")
+print(f"Device        : {torch.cuda.get_device_name(0)}")
+print(f"Precision     : FP16")
+print(f"Input size    : {IMG_SIZE}x{IMG_SIZE}")
+print(f"Avg time/frame: {avg_time*1000:.2f} ms")
+print(f"FPS           : {fps:.2f}")
+print("=================================")
