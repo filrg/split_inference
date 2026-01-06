@@ -1,9 +1,10 @@
 import pika
 import uuid
 import argparse
-import yaml
-import torch
+import yaml , json
+import torch , random
 
+from src.Log import Logger
 import src.Log
 from src.RpcClient import RpcClient
 from src.Scheduler import Scheduler
@@ -34,10 +35,23 @@ if __name__ == "__main__":
     username = config["rabbit"]["username"]
     password = config["rabbit"]["password"]
 
+    log_path = config["log-path"]
+    logger = Logger(f"{log_path}/app.log", debug_mode= config['debug-mode'])
+
     virtual_host = config["rabbit"]["virtual-host"]
 
     src.Log.print_with_color("[>>>] Client sending registration message to server...", "red")
-    data = {"action": "REGISTER", "client_id": client_id, "layer_id": args.layer_id, "message": "Hello from Client!"}
+    with open('data/device.json', 'r') as file:
+        device = json.load(file)
+    # Test mode - create random value
+    if address == '127.0.0.1':
+        # print(f"[TYPE device] {type(device)}")  # dict
+        print("Random values for local test !")
+        for key , _ in device.items():
+            device[key] = device[key] * random.randint(1, 4) if isinstance(device[key], int) else device[key]
+
+    data = {"action": "REGISTER", "client_id": client_id, "layer_id": args.layer_id,
+            "message": "Hello from Client!" , "device" : device}
 
     device = None
 
@@ -55,8 +69,11 @@ if __name__ == "__main__":
     connection = pika.BlockingConnection(pika.ConnectionParameters(address, 5672, f'{virtual_host}', credentials))
     channel = connection.channel()
 
+    logger.log_debug(f"\n [ Layer id ] : {args.layer_id} \n [ UUID client id ] : {client_id} " )
+
+
     scheduler = Scheduler(client_id, args.layer_id , channel, device , config["tracker"]["enable"] ) #, num_client=config['server']['clients'])
-    print("[Debug] tracker status : ", config["tracker"]["enable"])
+    logger.log_debug(" Tracker status : ", config["tracker"]["enable"])
     client = RpcClient(client_id, args.layer_id, address, username, password, virtual_host, scheduler.inference_func, scheduler.check_compress_func, device)
     client.send_to_server(data)
     client.wait_response()

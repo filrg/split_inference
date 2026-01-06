@@ -42,10 +42,12 @@ class Logger:
         print_with_color(f"[ERROR] {message}", "red")
         self.logger.error(message)
 
-    def log_debug(self, message):
-        if self.debug_mode:
-            print_with_color(f"[DEBUG] {message}", "green")
-            self.logger.debug(message)
+    def log_debug(self, *messages):
+        if not self.debug_mode:
+            return
+        for msg in messages:
+            print_with_color(f"[DEBUG] {msg}", "magenta")
+            self.logger.debug(msg)
 
 
 def print_with_color(text, color):

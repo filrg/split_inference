@@ -10,7 +10,7 @@ import copy
 import time
 import psutil
 from dataclasses import dataclass
-
+from src.Log import Logger
 
 @dataclass
 class MessageSize:
@@ -25,8 +25,8 @@ class Scheduler:
         self.layer_id = layer_id
         self.channel = channel
         self.device = device
-        self.intermediate_queue = f"intermediate_queue_{self.layer_id}"
-        self.channel.queue_declare(self.intermediate_queue, durable=False)
+        self.n_cluster = 2
+        self.queue_name = None
 
         self.bbox_queue = "bbox_queue"
         self.ori_img_queue = "ori_img_queue"
@@ -143,16 +143,18 @@ class Scheduler:
                 message = {
                     "signal": 'STOP',
                     "total_time": total_time,
-                    "size_mess2tracker": format_size(self.self.mess_size.cl1_2_tracker),
+                    "size_mess2tracker": format_size(self.mess_size.cl1_2_tracker),
                     "size_mess2cl2": format_size(self.mess_size.cl1_2_cl2),
-                    "GPU_time": str(round(self.gpu_time_1, 5)) + "s",
-                    "peak_RAM": str(round(self.peak_ram_1, 3)) + "MB",
-                    "peak_VRAM": str(round(self.peak_vram_1, 3)) + "MB"
+                    # "GPU_time": str(round(self.gpu_time_1, 5)) + "s",
+                    # "peak_RAM": str(round(self.peak_ram_1, 3)) + "MB",
+                    # "peak_VRAM": str(round(self.peak_vram_1, 3)) + "MB"
                 }
 
             message_bytes = pickle.dumps(message)
-            if self.self.mess_size.cl1_2_tracker == -1:
-                self.self.mess_size.cl1_2_tracker = len(message_bytes)
+            # print('DEBUG BEFORE get len')
+            if self.mess_size.cl1_2_tracker == -1:
+                self.mess_size.cl1_2_tracker = len(message_bytes)
+            # print('DEBUG BEFORE PUBLISH')
             self.channel.basic_publish(
                 exchange='',
                 routing_key=tracker_queue,
@@ -161,7 +163,7 @@ class Scheduler:
         except Exception as e:
             logger.log_error(f"[send_ori_img]: Failed to send data to tracker. Error: {e}")
 
-    def first_layer(self, model, data, save_layers, batch_frame, logger, compress):
+    def first_layer(self, model, data, save_layers, batch_frame, logger, compress ):
         start_time = time.time()
         input_image = []
         lst_frame = []
@@ -201,7 +203,7 @@ class Scheduler:
                 y = 'STOP'
                 self.gpu_time_1 = self.gpu_time_1 / 1000.0  # convert to second
                 total_time = time.time() - start_time
-                self.send_next_layer(self.intermediate_queue, y, logger, compress, signal='STOP')
+                self.send_next_layer(self.queue_name, y, logger, compress, signal='STOP')
                 self.send_ori_img(self.ori_img_queue, y, frame_index, (0, 0), logger, signal='STOP',
                                   total_time=total_time)
                 break
@@ -249,7 +251,7 @@ class Scheduler:
                 # y["width"] = width
                 # y["height"] = height
 
-                self.send_next_layer(self.intermediate_queue, y, logger, compress)
+                self.send_next_layer(self.queue_name, y, logger, compress)
                 logger.log_info('Send a message.')
                 input_image = []
                 lst_frame = []
@@ -258,8 +260,8 @@ class Scheduler:
             else:
                 continue
 
-        print(f'size message: {self.mess_size.cl1_2_cl2} bytes.')
-        logger.log_info(f'size message: {self.mess_size.cl1_2_cl2} bytes.')
+        print(f'\nsize message: {self.mess_size.cl1_2_cl2 // (1024 * 1024)} MB.')
+        logger.log_info(f'\nsize message: {self.mess_size.cl1_2_cl2// (1024 * 1024)} MB.')
         cap.release()
         pbar.close()
         logger.log_info(f"Finish Inference.")
@@ -272,8 +274,8 @@ class Scheduler:
         process = psutil.Process(os.getpid())
         model.eval()
         model.to(self.device)
-        last_queue = f"intermediate_queue_{self.layer_id - 1}"
-        self.channel.queue_declare(queue=last_queue, durable=False)
+        # self.queue_name = f"intermediate_queue_{self.layer_id - 1}"
+        # self.channel.queue_declare(queue=self.queue_name, durable=False)
         self.channel.basic_qos(prefetch_count=50)
 
         if self.enable_tracker:
@@ -282,7 +284,7 @@ class Scheduler:
 
         pbar = tqdm(desc="Processing video (while loop)", unit="frame")
         while True:
-            method_frame, header_frame, body = self.channel.basic_get(queue=last_queue, auto_ack=True)
+            method_frame, header_frame, body = self.channel.basic_get(queue=self.queue_name, auto_ack=True)
             if method_frame and body:
                 logger.log_info(f'Receive a message.')
 
@@ -332,11 +334,14 @@ class Scheduler:
     def middle_layer(self, model):
         pass
 
-    def inference_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress):
+    def inference_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, level = 1):
+        logger.log_debug(f"[DEBUG at inference_func] {level}")
+        self.queue_name = f'intermediate_queue_{level}'
+        self.channel.queue_declare(self.queue_name, durable=False)
         if self.layer_id == 1:
-            self.first_layer(model, data, save_layers, batch_frame, logger, compress)
+            self.first_layer(model, data, save_layers, batch_frame, logger, compress )
         elif self.layer_id == num_layers:
-            self.last_layer(model, batch_frame, logger, compress)
+            self.last_layer(model, batch_frame, logger, compress )
         else:
             self.middle_layer(model)
 
@@ -394,12 +399,12 @@ class Scheduler:
             y["path"] = path
             y["size"] = size
             logger.log_info(f'Complete {batch_frame} frame.')
-            self.send_next_layer(self.intermediate_queue, y, logger, compress)
+            self.send_next_layer(self.queue_name, y, logger, compress)
             input_image = []
             pbar.update(batch_frame)
 
         y = 'STOP'
-        self.send_next_layer(self.intermediate_queue, y, logger, compress, 'STOP')
+        self.send_next_layer(self.queue_name, y, logger, compress, 'STOP')
 
         print(f'size message: {self.mess_size.cl1_2_cl2} bytes.')
         logger.log_info(f'size message: {self.mess_size.cl1_2_cl2} bytes.')
@@ -420,13 +425,13 @@ class Scheduler:
 
         model.eval()
         model.to(self.device)
-        last_queue = f"intermediate_queue_{self.layer_id - 1}"
-        self.channel.queue_declare(queue=last_queue, durable=False)
+        self.queue_name = f"intermediate_queue_{self.layer_id - 1}"
+        self.channel.queue_declare(queue=self.queue_name, durable=False)
         self.channel.basic_qos(prefetch_count=50)
 
         pbar = tqdm(desc="Processing video (while loop)", unit="frame")
         while True:
-            method_frame, header_frame, body = self.channel.basic_get(queue=last_queue, auto_ack=True)
+            method_frame, header_frame, body = self.channel.basic_get(queue=self.queue_name, auto_ack=True)
             if method_frame and body:
 
                 received_data = pickle.loads(body)
@@ -497,7 +502,10 @@ class Scheduler:
             logger.log_info(f"mAP@0.5:0.95: {average:.4f}")
         logger.log_info(f"Finish Inference.")
 
-    def check_compress_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, cal_map):
+    def check_compress_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, cal_map, level = 1):
+        logger.log_debug(f"[DEBUG at check_compress_func] {level}")
+        self.queue_name = f'intermediate_queue_{level}'
+        self.channel.queue_declare(self.queue_name, durable=False)
         if self.layer_id == 1:
             self.check_first_layer(model, data, save_layers, batch_frame, logger, compress, cal_map)
         elif self.layer_id == num_layers:

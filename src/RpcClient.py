@@ -10,6 +10,7 @@ import torch.nn as nn
 import src.Log
 from src.Model import SplitDetectionModel
 from ultralytics import YOLO
+from src.Log import Logger
 
 class RpcClient:
     def __init__(self, client_id, layer_id, address, username, password, virtual_host, inference_func, check_compress_func, device):
@@ -28,12 +29,13 @@ class RpcClient:
         self.response = None
         self.model = None
         self.data = None
-        self.logger = None
+        # self.logger = Logger(f"{log_path}/app.log" , debug_mode = self.debug_mode)
         self.connect()
 
     def wait_response(self):
         status = True
         reply_queue_name = f"reply_{self.client_id}"
+        # print(f"[reply_queue_name] {reply_queue_name}")
         self.channel.queue_declare(reply_queue_name, durable=False)
         while status:
             method_frame, header_frame, body = self.channel.basic_get(queue=reply_queue_name, auto_ack=True)
@@ -58,6 +60,7 @@ class RpcClient:
             cal_map = self.response["cal_map"]
 
             debug_mode = self.response["debug_mode"]
+            level = self.response["level"]
 
             self.logger = src.Log.Logger(f"res/result.log", debug_mode)
             if model is not None:
@@ -77,9 +80,9 @@ class RpcClient:
             start = time.time()
             self.logger.log_info(f"Start Inference")
             if cal_map["enable"] is False:
-                self.inference_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress)
+                self.inference_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress , level = level)
             else:
-                self.check_compress_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress, cal_map)
+                self.check_compress_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress, cal_map , level = level )
             all_time = time.time() - start
             src.Log.print_with_color(f"All time: {all_time}s", 'green')
             # Stop or Error

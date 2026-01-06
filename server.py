@@ -39,7 +39,6 @@ if __name__ == "__main__":
             # print(comm_times)
             dijkstra_app = Dijkstra(cost, data["name_devices"])
             split_point = get_layer_output(dijkstra_app.run())
-            # delete_old_queues(address, username, password, virtual_host)
             save_log(split_point)
         else:
             split_point = get_log()
@@ -48,7 +47,6 @@ if __name__ == "__main__":
         signal.signal(signal.SIGINT, signal_handler)
         # delete_old_queues(address, username, password, virtual_host)
         server = Server(config, split_point)
-        # save_log(split_point)
     else :
         server = Server(config , -1)    # if 2nd para is -1 , get cut layer a , b, c or d
     server.start()
