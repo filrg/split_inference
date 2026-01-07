@@ -27,6 +27,7 @@ class Scheduler:
         self.device = device
         self.n_cluster = 2
         self.queue_name = None
+        self.num_edges = None
 
         self.bbox_queue = "bbox_queue"
         self.ori_img_queue = "ori_img_queue"
@@ -289,7 +290,7 @@ class Scheduler:
                 logger.log_info(f'Receive a message.')
 
                 received_data = pickle.loads(body)
-                if received_data != 'STOP':
+                if received_data != 'STOP' :
                     y = received_data["data"]
 
                     if compress["enable"]:
@@ -317,7 +318,10 @@ class Scheduler:
                     logger.log_info(f'End inference {batch_frame} frames.')
 
                     pbar.update(batch_frame)
+                elif received_data == 'STOP' and self.num_edges > 1 :
+                    self.num_edges -= 1
                 else:
+                    logger.log_debug(f"[Num edges ] {self.num_edges}")
                     print(f"[FPS with batch size {batch_frame} ] : {self.FPSs}")
                     total_time = time.time() - start_time
                     self.gpu_time_2 = self.gpu_time_2 / 1000.0
@@ -334,9 +338,10 @@ class Scheduler:
     def middle_layer(self, model):
         pass
 
-    def inference_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, level = 1):
+    def inference_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, level = 1 , num_edges = 1):
         logger.log_debug(f"[DEBUG at inference_func] {level}")
         self.queue_name = f'intermediate_queue_{level}'
+        self.num_edges = num_edges
         self.channel.queue_declare(self.queue_name, durable=False)
         if self.layer_id == 1:
             self.first_layer(model, data, save_layers, batch_frame, logger, compress )
@@ -502,9 +507,10 @@ class Scheduler:
             logger.log_info(f"mAP@0.5:0.95: {average:.4f}")
         logger.log_info(f"Finish Inference.")
 
-    def check_compress_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, cal_map, level = 1):
+    def check_compress_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, cal_map, level = 1 , num_edges = 1):
         logger.log_debug(f"[DEBUG at check_compress_func] {level}")
         self.queue_name = f'intermediate_queue_{level}'
+        self.num_edges = num_edges
         self.channel.queue_declare(self.queue_name, durable=False)
         if self.layer_id == 1:
             self.check_first_layer(model, data, save_layers, batch_frame, logger, compress, cal_map)

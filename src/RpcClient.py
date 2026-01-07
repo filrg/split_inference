@@ -61,6 +61,7 @@ class RpcClient:
 
             debug_mode = self.response["debug_mode"]
             level = self.response["level"]
+            num_edges = self.response["num_edge_layer_1"]
 
             self.logger = src.Log.Logger(f"res/result.log", debug_mode)
             if model is not None:
@@ -80,9 +81,9 @@ class RpcClient:
             start = time.time()
             self.logger.log_info(f"Start Inference")
             if cal_map["enable"] is False:
-                self.inference_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress , level = level)
+                self.inference_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress , level = level , num_edges = num_edges)
             else:
-                self.check_compress_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress, cal_map , level = level )
+                self.check_compress_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress, cal_map , level = level , num_edges = num_edges )
             all_time = time.time() - start
             src.Log.print_with_color(f"All time: {all_time}s", 'green')
             # Stop or Error

@@ -184,6 +184,7 @@ class Server:
                     level = val
 
             self.logger.log_debug(f"level {level} , {type(level)}")
+            self.logger.log_debug(f"Num edge at layer id 1 {self.cluster.num_edges[1]} type {type(self.cluster.num_edges[1])}")
 
             response = {"action": "START",
                         "message": "Server accept the connection",
@@ -197,6 +198,7 @@ class Server:
                         "debug_mode": self.debug_mode,
                         "compress": self.compress,
                         "cal_map": self.cal_map,
-                        "level": level}
+                        "level": level,
+                        "num_edge_layer_1": self.cluster.num_edges[1]}
 
             self.send_to_response(client_id, pickle.dumps(response))
