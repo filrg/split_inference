@@ -22,7 +22,7 @@ class Cluster:
     features: np.ndarray = field(default_factory=lambda: np.array([]))
     data: dict = field(default_factory=dict)
     data_names: dict = field(default_factory=dict)
-    num_edges: dict = field(default_factory=dict)
+    result: dict = field(default_factory=dict)
 
 class Server:
     def __init__(self, config , split_point ):
@@ -62,7 +62,7 @@ class Server:
         # Handle message for clustering
         self.cluster = Cluster()
         self.cluster.data_names = defaultdict(list)
-        self.result = {}
+        self.storage_level = {}
         self.n_cluster = config["clustering"]["num_clusters"]
 
 
@@ -106,9 +106,9 @@ class Server:
             # If consumed all clients - Register for first time
             if self.register_clients == self.total_clients:
                 # notify get info from devices successfully
-                self.logger.log_debug('Check data output :')
-                self.logger.log_debug('device names : ', self.cluster.data_names)
-                self.logger.log_debug('data : ' , self.cluster.data)
+                self.logger.log_debug('Check data output cluster :')
+                self.logger.log_debug(f'device names : \n {self.cluster.data_names} \n')
+                self.logger.log_debug(f'data : \n {self.cluster.data} \n')
 
                 for layer , features in self.cluster.data.items():
                     cluster = Clustering(features ,
@@ -116,17 +116,25 @@ class Server:
                                          n_clusters = self.n_cluster
                                          )
                     res = cluster.run()
-                    self.logger.log_debug('result of cluster ' , res )
+                    self.logger.log_debug(f' Result of cluster  \n ==== \n {res} \n === \n')
+                    if layer == 1 :
+                        for key , lst_id in res.items():     # result['level 1']['layer 1'] : list
+                            temp = self.n_cluster - int(key[-1]) + 1
+                            new_key = f'{key[:-1]}{temp}'
+                            self.logger.log_debug(f'[Switch level at layer 1 \n [Old key] {key} -> [New key] {new_key} at layer 1 \n')
+                            self.cluster.result[new_key] = {}
+                            self.cluster.result[new_key]['layer 1'] = lst_id
+                    else :
+                        for key , lst_id in res.items():     # result['level 1']['layer 1'] : list
+                            self.cluster.result[key][f'layer {layer}'] = lst_id
+
+
                     for key , lst_id in res.items():
                         for id in lst_id :
-                            self.result[id.hex] = key
+                            self.storage_level[id.hex] = key
 
-                    if layer == 1 :
-                        self.cluster.num_edges[int(layer)] = len(features)
-                self.logger.log_debug("[result]")
-                self.logger.log_debug(self.result)
-                self.logger.log_debug("[num edges]")
-                self.logger.log_debug(self.cluster.num_edges)
+                self.logger.log_debug(f"[storage level ] \n ==== \n {self.storage_level} \n ==== \n")
+                self.logger.log_debug(f"[RESULT] \n ==== \n {self.cluster.result} \n ===== \n  ")
 
                 src.Log.print_with_color("All clients are connected. Sending notifications.", "green")
                 self.notify_clients()
@@ -175,16 +183,19 @@ class Server:
 
         for (client_id, layer_id) in self.list_clients:
 
-            lst_keys = list(self.result.keys())
+            lst_keys = list(self.storage_level.keys())
             self.logger.log_debug(f"check type list key 0 {type(lst_keys[0])} of {lst_keys[0]}")
             self.logger.log_debug(f"client id {client_id} of {type(client_id)}")
             level = 0
-            for key , val in self.result.items():
+            for key , val in self.storage_level.items():
                 if client_id.replace("-", "") in key :
                     level = val
 
+            num_edges = len(self.cluster.result[level]['layer 1'])
+
+            self.logger.log_debug(f'[num_edges] {num_edges}')
             self.logger.log_debug(f"level {level} , {type(level)}")
-            self.logger.log_debug(f"Num edge at layer id 1 {self.cluster.num_edges[1]} type {type(self.cluster.num_edges[1])}")
+
 
             response = {"action": "START",
                         "message": "Server accept the connection",
@@ -199,6 +210,6 @@ class Server:
                         "compress": self.compress,
                         "cal_map": self.cal_map,
                         "level": level,
-                        "num_edge_layer_1": self.cluster.num_edges[1]}
+                        "num_edge_layer_1": num_edges}
 
             self.send_to_response(client_id, pickle.dumps(response))
