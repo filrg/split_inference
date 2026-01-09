@@ -13,6 +13,11 @@ from dataclasses import dataclass , field
 import numpy as np
 from src.clustering.clustering import Clustering
 from collections import defaultdict
+
+from src.partition.controller import Controller
+from src.partition.handle_data import Data
+from src.partition.dijkstra import Dijkstra
+from src.Utils import get_layer_output , get_log , save_log
 # from src.Log import log_debug
 
 
@@ -25,7 +30,9 @@ class Cluster:
     result: dict = field(default_factory=dict)
 
 class Server:
-    def __init__(self, config , split_point ):
+    def __init__(self, config ):
+        self.config = config
+
         # RabbitMQ
         address = config["rabbit"]["address"]
         username = config["rabbit"]["username"]
@@ -36,7 +43,7 @@ class Server:
         self.total_clients = config["server"]["clients"]
         self.cut_layer = config["server"]["cut-layer"]
         self.batch_frame = config["server"]["batch-frame"]
-        self.split_point = split_point
+        self.split_point = -1
 
         credentials = pika.PlainCredentials(username, password)
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(address, 5672, f'{virtual_host}', credentials))
@@ -139,9 +146,6 @@ class Server:
                 src.Log.print_with_color("All clients are connected. Sending notifications.", "green")
                 self.notify_clients()
 
-
-
-
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def send_to_response(self, client_id, message):
@@ -159,18 +163,6 @@ class Server:
         self.channel.start_consuming()
 
     def notify_clients(self):
-        default_splits = {
-            "a": (4, [3]),
-            "b": (11, [4, 6, 10]),
-            "c": (17, [10, 13, 16]),
-            "d": (23, [16, 19, 22])
-        }
-        # model = YOLO(f"{self.model_name}.pt")
-        # splits = default_splits[self.cut_layer]
-        splits = self.split_point
-        if splits == -1 :
-            splits = default_splits[self.cut_layer]
-        self.logger.log_debug(f"splits : {splits}")
         file_path = f"{self.model_name}.pt"
         if os.path.exists(file_path):
             src.Log.print_with_color(f"Load model {self.model_name}.", "green")
@@ -181,35 +173,104 @@ class Server:
             src.Log.print_with_color(f"{self.model_name} does not exist.", "yellow")
             sys.exit()
 
-        for (client_id, layer_id) in self.list_clients:
+        response = {"action": "START",
+                    "message": "Server accept the connection",
+                    "model": encoded,
+                    "splits": "remeasure",
+                    "save_layers": "None",
+                    "batch_frame": self.batch_frame,
+                    "num_layers": len(self.total_clients),
+                    "model_name": self.model_name,
+                    "data": self.data,
+                    "debug_mode": self.debug_mode,
+                    "compress": self.compress,
+                    "cal_map": self.cal_map,
+                    "level": 1, # level
+                    "num_edge_layer_1": 1 }#num_edges}
 
-            lst_keys = list(self.storage_level.keys())
-            self.logger.log_debug(f"check type list key 0 {type(lst_keys[0])} of {lst_keys[0]}")
-            self.logger.log_debug(f"client id {client_id} of {type(client_id)}")
-            level = 0
-            for key , val in self.storage_level.items():
-                if client_id.replace("-", "") in key :
-                    level = val
+        self.logger.log_debug(
+            f'\n RESULT \n {self.cluster.result} \n --------------- \n'
+        )
+        self.logger.log_debug(
+            f'\n LIST CLIENT  \n {self.list_clients} \n --------------- \n '
+            f'{type(self.list_clients[0][0])}'
+        )
 
-            num_edges = len(self.cluster.result[level]['layer 1'])
-
-            self.logger.log_debug(f'[num_edges] {num_edges}')
-            self.logger.log_debug(f"level {level} , {type(level)}")
-
-
-            response = {"action": "START",
-                        "message": "Server accept the connection",
-                        "model": encoded,
+        if self.config["partition"]["auto"]:
+            if self.config["partition"]["re-measure"]:
+                """
+                Remeasure mode
+                After clustering :
+                    1. Send respond to clients with ['splits'] : 'remeasure' . Then clients run measure mode 
+                    2. Get data and run dijkstra algorithm .
+                    3. Send split point to clients .
+                
+                """
+                # 1
+                for level, layers in self.cluster.result.items():
+                    for layer, lst_device in layers.items():
+                        # print(level, layer, lst_device, '\n')
+                        for client_id in lst_device :
+                            self.logger.log_debug(f'string client id {str(client_id)}')
+                            response['level'] = level
+                            self.send_to_response(str(client_id), pickle.dumps(response))
+                    # 2
+                    data = Controller(self.config, level=level).run()
+                    layer_times = data["layer_times"]
+                    comm_times = data["comm_times"]
+                    cost = Data(layer_times, comm_times, data["name_devices"], verbose=False).run()
+                    dijkstra_app = Dijkstra(cost, data["name_devices"])
+                    splits = get_layer_output(dijkstra_app.run())
+                    src.Log.print_with_color(f"[***] Split point {splits} of {level}", "blue")
+                    response_splits = {
                         "splits": splits[0],
-                        "save_layers": splits[1],
-                        "batch_frame": self.batch_frame,
-                        "num_layers": len(self.total_clients),
-                        "model_name": self.model_name,
-                        "data": self.data,
-                        "debug_mode": self.debug_mode,
-                        "compress": self.compress,
-                        "cal_map": self.cal_map,
-                        "level": level,
-                        "num_edge_layer_1": num_edges}
+                        "save_layers" : splits[1]
+                    }
+                    # 3
+                    for layer, lst_device in layers.items():
+                        for client_id in lst_device :
+                            self.send_to_response(str(client_id) , pickle.dumps(response_splits))
 
-            self.send_to_response(client_id, pickle.dumps(response))
+
+        # for (client_id, layer_id) in self.list_clients:
+        #     continue
+        #
+        #     # lst_keys = list(self.storage_level.keys())
+        #     # self.logger.log_debug(f"check type list key 0 {type(lst_keys[0])} of {lst_keys[0]}")
+        #     # self.logger.log_debug(f"client id {client_id} of {type(client_id)}")
+        #     level = 0
+        #     for key , val in self.storage_level.items():
+        #         if client_id.replace("-", "") in key :
+        #             level = val
+        #
+        #     num_edges = len(self.cluster.result[level]['layer 1'])
+        #
+        #     default_splits = {
+        #         "a": (4, [3]),
+        #         "b": (11, [4, 6, 10]),
+        #         "c": (17, [10, 13, 16]),
+        #         "d": (23, [16, 19, 22])
+        #     }
+        #
+        #     # get best cut point
+        #     if self.config["partition"]["auto"]:
+        #         if self.config["partition"]["re-measure"]:
+        #             self.send_to_response(client_id, pickle.dumps(response))
+        #             data = Controller(self.config , level = level).run()
+        #             layer_times = data["layer_times"]
+        #             comm_times = data["comm_times"]
+        #             cost = Data(layer_times, comm_times, data["name_devices"], verbose=True).run()
+        #             # print(layer_times[0])
+        #             # print(layer_times[1])
+        #             # print(comm_times)
+        #             dijkstra_app = Dijkstra(cost, data["name_devices"])
+        #             split_point = get_layer_output(dijkstra_app.run())
+        #             # save_log(split_point)
+        #         else:
+        #             pass
+        #             # split_point = get_log()
+        #     else :
+        #         splits = ['remeasure', 0]
+        #
+        #     if splits == -1:
+        #         splits = default_splits[self.cut_layer]

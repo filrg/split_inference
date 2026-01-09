@@ -98,7 +98,7 @@ class LayerProfiler:
             with torch.no_grad():
                 self.model(self.x)
 
-            # 🔥 synchronize 1 LẦN / forward
+            #  synchronize 1 time / forward
             if self.mode == "time" and self.device == "cuda":
                 torch.cuda.synchronize()
 

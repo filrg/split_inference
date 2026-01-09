@@ -5,15 +5,23 @@ import yaml
 import pika
 import pickle
 import socket
-
+import src.Log
 
 class Controller :
-    def __init__(self, config: dict):
+    def __init__(self, config: dict , level= 'level 1'):
         print("Start Controller ...")
+
+        log_path = config["log-path"]
+        debug_mode = config["debug-mode"]
+        self.logger = src.Log.Logger(f"{log_path}/app.log" , debug_mode = debug_mode)
         self.config = config
-        self.queue_device_1 = config["rabbit"]["queue_device_1"]
-        self.queue_device_2 = config["rabbit"]["queue_device_2"]
-        self.queue_device_3 = "host_queue"
+        self.queue_device_1 = f'{config["rabbit"]["queue_device_1"]}_{level}'
+        self.queue_device_2 = f'{config["rabbit"]["queue_device_2"]}_{level}'
+        self.queue_device_3 = f"host_queue_{level}"
+
+        self.logger.log_debug(f'Name of queue device 1 : {self.queue_device_1} ')
+        self.logger.log_debug(f'Name of queue device 2 : {self.queue_device_2} ')
+        self.logger.log_debug(f'Name of queue device 3 : {self.queue_device_3} \n')
 
         credentials = pika.PlainCredentials(
             config["rabbit"]["username"], config["rabbit"]["password"]

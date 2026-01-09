@@ -9,6 +9,7 @@ from src.Utils import write_partial
 from pathlib import Path
 from src.partition.time_layers import LayerProfiler
 from src.partition.tools import get_output_from_json
+import src.Log
 
 MAX_SIZE_QUEUE = 16777216
 # MAX_SIZE_QUEUE = 19777216
@@ -16,8 +17,22 @@ INFINITY_TIME = 1000000
 
 
 class MessageSender:
-    def __init__(self, config):
+    def __init__(self, config , level = 'level 1'):
         print("Start sender ... ")
+        # Init
+        log_path = config["log-path"]
+        debug_mode = config["debug-mode"]
+        self.logger = src.Log.Logger(f"{log_path}/app.log" , debug_mode = debug_mode)
+        self.config = config
+        self.queue_device_1 = f'{config["rabbit"]["queue_device_1"]}_{level}'
+        self.queue_device_2 = f'{config["rabbit"]["queue_device_2"]}_{level}'
+        self.queue_device_3 = f"host_queue_{level}"
+
+        self.logger.log_debug('Message Sender ')
+        self.logger.log_debug(f'Name of queue device 1 : {self.queue_device_1} ')
+        self.logger.log_debug(f'Name of queue device 2 : {self.queue_device_2} ')
+        self.logger.log_debug(f'Name of queue device 3 : {self.queue_device_3} \n')
+
         self.config = config
         self.connection = pika.BlockingConnection(
             pika.ConnectionParameters(
@@ -29,11 +44,8 @@ class MessageSender:
                 virtual_host=config["rabbit"]["virtual-host"]
             )
         )
-        self.queue_device_1 = config["rabbit"]["queue_device_1"]
-        self.queue_device_2 = config["rabbit"]["queue_device_2"]
-        self.queue_device_3 = "host_queue"
+
         self.channel = self.connection.channel()
-        self.queue = "time_layers"
         self.channel.queue_declare(queue=self.queue_device_1 , durable= True)
         self.channel.queue_declare(queue=self.queue_device_2 , durable= True)
         self.channel.queue_declare(queue=self.queue_device_3, durable=True)
@@ -152,11 +164,21 @@ class MessageSender:
             print(f"Error during clean-up: {e}")
 
 class MessageReceiver:
-    def __init__(self, config: dict):
+    def __init__(self, config: dict , level = 'level 1'):
         print("Start Receiver ... ")
+        # Init
+        log_path = config["log-path"]
+        debug_mode = config["debug-mode"]
+        self.logger = src.Log.Logger(f"{log_path}/app.log", debug_mode=debug_mode)
         self.config = config
-        self.queue_device_1 = config["rabbit"]["queue_device_1"]
-        self.queue_device_2 = config["rabbit"]["queue_device_2"]
+        self.queue_device_1 = f'{config["rabbit"]["queue_device_1"]}_{level}'
+        self.queue_device_2 = f'{config["rabbit"]["queue_device_2"]}_{level}'
+        self.queue_device_3 = f"host_queue_{level}"
+
+        self.logger.log_debug('Message Receiver ')
+        self.logger.log_debug(f'Name of queue device 1 : {self.queue_device_1} ')
+        self.logger.log_debug(f'Name of queue device 2 : {self.queue_device_2} ')
+        self.logger.log_debug(f'Name of queue device 3 : {self.queue_device_3} \n')
 
         credentials = pika.PlainCredentials(
             config["rabbit"]["username"], config["rabbit"]["password"]

@@ -21,22 +21,26 @@ with open('cfg/config.yaml', 'r') as file:
 
 
 if __name__ == "__main__":
+    log_path = config["log-path"]
+    logger = Logger(f"{log_path}/app.log", debug_mode= config['debug-mode'])
+
     if config["partition"]["auto"] and config["partition"]["re-measure"] :
-        layer_id = args.layer_id
-        if layer_id == 1:
-            app = MessageSender(config)
-        else :
-            app = MessageReceiver(config)
-        app.run()
-        app.clean()
+        remeasure_mode = True
+    else :
+        remeasure_mode = False
+        # layer_id = args.layer_id
+        # if layer_id == 1:
+        #     app = MessageSender(config)
+        # else :
+        #     app = MessageReceiver(config)
+        # app.run()
+        # app.clean()
+    logger.log_debug(f'remeasure_mode {remeasure_mode} \n')
 
     client_id = uuid.uuid4()
     address = config["rabbit"]["address"]
     username = config["rabbit"]["username"]
     password = config["rabbit"]["password"]
-
-    log_path = config["log-path"]
-    logger = Logger(f"{log_path}/app.log", debug_mode= config['debug-mode'])
 
     virtual_host = config["rabbit"]["virtual-host"]
 
@@ -74,6 +78,7 @@ if __name__ == "__main__":
 
     scheduler = Scheduler(client_id, args.layer_id , channel, device , config["tracker"]["enable"] ) #, num_client=config['server']['clients'])
     logger.log_debug(" Tracker status : ", config["tracker"]["enable"])
-    client = RpcClient(client_id, args.layer_id, address, username, password, virtual_host, scheduler.inference_func, scheduler.check_compress_func, device)
+    client = RpcClient(client_id, args.layer_id, address, username, password, virtual_host, scheduler.inference_func,
+                       scheduler.check_compress_func, device , remeasure_mode , config)
     client.send_to_server(data)
     client.wait_response()

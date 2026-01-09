@@ -12,8 +12,12 @@ from src.Model import SplitDetectionModel
 from ultralytics import YOLO
 from src.Log import Logger
 
+from src.Scheduler import Scheduler
+from src.partition.consumers import MessageSender, MessageReceiver
+
 class RpcClient:
-    def __init__(self, client_id, layer_id, address, username, password, virtual_host, inference_func, check_compress_func, device):
+    def __init__(self, client_id, layer_id, address, username, password,
+                 virtual_host, inference_func, check_compress_func, device  , remeasure_mode , config):
         self.client_id = client_id
         self.layer_id = layer_id
         self.address = address
@@ -23,6 +27,8 @@ class RpcClient:
         self.inference_func = inference_func
         self.check_compress_func = check_compress_func
         self.device = device
+        self.remeasure_mode = remeasure_mode
+        self.config = config
 
         self.channel = None
         self.connection = None
@@ -44,6 +50,10 @@ class RpcClient:
             time.sleep(0.5)
 
     def response_message(self, body):
+        """
+        send device info -> get level -> remeasure -> get split_point
+        """
+
         self.response = pickle.loads(body)
         src.Log.print_with_color(f"[<<<] Client received: {self.response['message']}", "blue")
         action = self.response["action"]
@@ -64,6 +74,31 @@ class RpcClient:
             num_edges = self.response["num_edge_layer_1"]
 
             self.logger = src.Log.Logger(f"res/result.log", debug_mode)
+            src.Log.print_with_color(f'[Level] : {level}' , "blue")
+
+            # check re-measure mode
+            if splits == 'remeasure' :
+                print('measure mode ')
+                self.logger.log_debug(f'Check level : {level} \n')
+                if self.layer_id == 1:
+                    app = MessageSender(self.config, level=level)
+                else:
+                    app = MessageReceiver(self.config, level=level)
+                app.run()
+                app.clean()
+
+                status = True
+                reply_queue_name = f"reply_{self.client_id}"
+                while status:
+                    method_frame, header_frame, body = self.channel.basic_get(queue=reply_queue_name, auto_ack=True)
+                    if body:
+                        body = pickle.loads(body)
+                        splits = body['splits']
+                        save_layers = body['save_layers']
+                        status = False
+                    time.sleep(0.5)
+
+
             if model is not None:
                 file_path = f'{model_name}.pt'
                 if os.path.exists(file_path):
