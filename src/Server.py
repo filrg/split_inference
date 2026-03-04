@@ -17,7 +17,7 @@ from collections import defaultdict
 from src.partition.controller import Controller
 from src.partition.handle_data import Data
 from src.partition.dijkstra import Dijkstra
-from src.Utils import get_layer_output , get_log , save_log
+from src.Utils import get_layer_output , get_log , save_log , save_partition_cluster , read_partition_cluster
 # from src.Log import log_debug
 
 
@@ -43,7 +43,7 @@ class Server:
         self.total_clients = config["server"]["clients"]
         self.cut_layer = config["server"]["cut-layer"]
         self.batch_frame = config["server"]["batch-frame"]
-        self.split_point = -1
+        self.split_point = {}
 
         credentials = pika.PlainCredentials(username, password)
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(address, 5672, f'{virtual_host}', credentials))
@@ -52,6 +52,7 @@ class Server:
 
         self.register_clients = [0 for _ in range(len(self.total_clients))]
         self.list_clients = []
+        self.lst_devices = [0, [0] , [0]]   # [0 , [list stage 1 id ] , [list stage 2 id ]]
 
         self.channel.basic_qos(prefetch_count=1)
         self.reply_channel = self.connection.channel()
@@ -69,8 +70,10 @@ class Server:
         # Handle message for clustering
         self.cluster = Cluster()
         self.cluster.data_names = defaultdict(list)
-        self.storage_level = {}
         self.n_cluster = config["clustering"]["num_clusters"]
+
+        # fine tune code variables
+        self.data_clients = {}  # storing all data of clients ( overview )
 
 
 
@@ -86,6 +89,7 @@ class Server:
 
                 # Handle message for Clustering
                 self.cluster.data_names[layer_id].append(message['client_id'])
+                self.storing_data(message , verbose=False)
                 # 1. Extract the data into a list
                 lst_data = [val for _, val in message['device'].items()]
                 new_row = np.asarray(lst_data)
@@ -106,59 +110,115 @@ class Server:
             self.logger.log_debug("Check output cluster features " , self.cluster.features)
             src.Log.print_with_color(f"[<<<] Received message from client: {message}", "blue")
 
-
-            # Save messages from clients
+            # check the number of clients each stage
             self.register_clients[layer_id-1] += 1
 
             # If consumed all clients - Register for first time
             if self.register_clients == self.total_clients:
-                # notify get info from devices successfully
-                self.logger.log_debug('Check data output cluster :')
-                self.logger.log_debug(f'device names : \n {self.cluster.data_names} \n')
-                self.logger.log_debug(f'data : \n {self.cluster.data} \n')
 
-                for layer , features in self.cluster.data.items():
-                    cluster = Clustering(features ,
-                                         self.cluster.data_names[layer] ,
-                                         n_clusters = self.n_cluster
-                                         )
-                    res = cluster.run()
-                    self.logger.log_debug(f' Result of cluster  \n ==== \n {res} \n === \n')
-                    if layer == 1 :
-                        for key , lst_id in res.items():     # result['level 1']['layer 1'] : list
-                            temp = self.n_cluster - int(key[-1]) + 1
-                            new_key = f'{key[:-1]}{temp}'
-                            self.logger.log_debug(f'[Switch level at layer 1 \n [Old key] {key} -> [New key] {new_key} at layer 1 \n')
-                            self.cluster.result[new_key] = {}
-                            self.cluster.result[new_key]['layer 1'] = lst_id
-                    else :
-                        for key , lst_id in res.items():     # result['level 1']['layer 1'] : list
-                            self.cluster.result[key][f'layer {layer}'] = lst_id
+                self.logger.log_debug('DATA USE FOR CLUSTER BEFORE HANDLE ')
+                self.logger.log_debug(f'lst_devices {self.lst_devices}')
+                self.logger.log_debug(f'data_clients {self.data_clients}')
 
+                self.logger.log_debug('AFTER CLUSTERING  \n')
+                cluster = Clustering(
+                    lst_devices = self.lst_devices ,
+                    data_clients = self.data_clients,
+                    n_cluster = self.n_cluster
+                )
+                res = cluster.run()
+                self.logger.log_debug(f'RES {res}')
+                for client_id in self.data_clients.keys():
+                    self.data_clients[client_id]['cluster'] = res[client_id]
 
-                    for key , lst_id in res.items():
-                        for id in lst_id :
-                            self.storage_level[id.hex] = key
+                self.count_num_edges()
+                self.count_num_clouds()
 
-                self.logger.log_debug(f"[storage level ] \n ==== \n {self.storage_level} \n ==== \n")
-                self.logger.log_debug(f"[RESULT] \n ==== \n {self.cluster.result} \n ===== \n  ")
+                self.logger.log_debug('DATA CLIENTS AFTER CLUSTERING ')
+                self.logger.log_debug(self.data_clients)
 
-                src.Log.print_with_color("All clients are connected. Sending notifications.", "green")
+                # send notify to clients include cluster id and partition point
                 self.notify_clients()
+
+                self.logger.log_debug('SENT NOTIFY TO CLIENTS ')
+
+            else:
+                print('not matching register clients and total clients ')
+                print(f'register clients{self.register_clients}')
+                self.logger.log_debug(f'total client {self.total_clients}')
 
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
+    # [ Utils ] start
+    def storing_data(self , dict_data , verbose = True ):
+        if verbose :
+            self.logger.log_debug(f' === > dict_data before run storing_data function \n {dict_data}')
+        new_key = str(dict_data['client_id'])
+        info = {}
+        info['device'] = dict_data['device']
+        info['stage'] = dict_data['layer_id']
+        self.data_clients[new_key] = info
+        # push to list state
+        self.lst_devices[info['stage']].append(new_key)
+
+        if verbose :
+            print(f'DATATYPE OF KEY {type(new_key)}')
+            print(f'Check data clients \n {self.data_clients}')
+            print(f'\nCheck lst devices info \n {self.lst_devices}')
+
+    def count_num_edges(self):
+        self.logger.log_debug(f'data clients {self.data_clients}')
+        cnt = [0] * (self.n_cluster + 1 )
+        for client_id in self.data_clients:
+            if self.data_clients[client_id]['stage'] == 1:
+                self.logger.log_debug(f'Check cluster {self.data_clients[client_id]['cluster']}')
+                cnt[self.data_clients[client_id]['cluster']] += 1
+
+        self.logger.log_debug(f'Check count num edges devices \n {cnt}')
+
+        for client_id in self.data_clients:
+            self.data_clients[client_id]['num_edges'] = cnt[self.data_clients[client_id]['cluster']]
+
+        self.logger.log_debug(f'Check num edges devices \n {self.data_clients}')
+
+    def count_num_clouds(self):
+        self.logger.log_debug(f'data clients {self.data_clients}')
+        cnt = [0] * (self.n_cluster + 1 )
+        for client_id in self.data_clients:
+            if self.data_clients[client_id]['stage'] == 2:
+                self.logger.log_debug(f'Check cluster {self.data_clients[client_id]['cluster']}')
+                cnt[self.data_clients[client_id]['cluster']] += 1
+
+        self.logger.log_debug(f'Check count num clouds devices \n {cnt}')
+
+        for client_id in self.data_clients:
+            self.data_clients[client_id]['num_clouds'] = cnt[self.data_clients[client_id]['cluster']]
+
+        self.logger.log_debug(f'Check num clouds devices \n {self.data_clients}')
+
+    def update_list(self , raw_list , para):
+        for i in range(len(raw_list)):
+            raw_list[i] = raw_list[i] * para
+        return raw_list
+
+    def assign_response(self , response , client_id ):
+        response['cluster_id'] = self.data_clients[client_id]['cluster']
+        response['num_edge_layer_1'] = self.data_clients[client_id]['num_edges']
+        response['num_clouds'] = self.data_clients[client_id]['num_clouds']
+
     def send_to_response(self, client_id, message):
         reply_queue_name = f"reply_{client_id}"
+        self.logger.log_debug(f'QUEUE_NAME {reply_queue_name}')
         self.reply_channel.queue_declare(reply_queue_name, durable=False)
         src.Log.print_with_color(f"[>>>] Sent notification to client {client_id}", "red")
-        self.logger.log_debug(f"[SPLIT_POINT] {self.split_point}")
+        # self.logger.log_debug(f"[SPLIT_POINT] {self.split_point}")
         self.reply_channel.basic_publish(
             exchange='',
             routing_key=reply_queue_name,
             body=message
         )
 
+    # end
     def start(self):
         self.channel.start_consuming()
 
@@ -176,7 +236,7 @@ class Server:
         response = {"action": "START",
                     "message": "Server accept the connection",
                     "model": encoded,
-                    "splits": "remeasure",
+                    "splits": "None",
                     "save_layers": "None",
                     "batch_frame": self.batch_frame,
                     "num_layers": len(self.total_clients),
@@ -185,8 +245,10 @@ class Server:
                     "debug_mode": self.debug_mode,
                     "compress": self.compress,
                     "cal_map": self.cal_map,
-                    "level": 1, # level
-                    "num_edge_layer_1": 1 }#num_edges}
+                    "cluster_id": 0 ,    # setup below
+                    "num_edge_layer_1": 0 ,
+                    "num_clouds" : 0
+                    }
 
         self.logger.log_debug(
             f'\n RESULT \n {self.cluster.result} \n --------------- \n'
@@ -201,76 +263,86 @@ class Server:
                 """
                 Remeasure mode
                 After clustering :
+                if re-measure mode : 
                     1. Send respond to clients with ['splits'] : 'remeasure' . Then clients run measure mode 
                     2. Get data and run dijkstra algorithm .
-                    3. Send split point to clients .
-                
+                    3. Send only split point and save layers to clients .
+                else :
+                    1. Get from json file 
+                    2. Send response to each client 
                 """
-                # 1
-                for level, layers in self.cluster.result.items():
-                    for layer, lst_device in layers.items():
-                        # print(level, layer, lst_device, '\n')
-                        for client_id in lst_device :
-                            self.logger.log_debug(f'string client id {str(client_id)}')
-                            response['level'] = level
-                            self.send_to_response(str(client_id), pickle.dumps(response))
-                    # 2
-                    data = Controller(self.config, level=level).run()
+                # 1.a choose 2 clients are 1 edge and 1 cloud each cluster to partition .
+                # 1.b send 'remeasure' for clients remeasure , 'wait' for clients
+                self.logger.log_debug('RE-MEASURE MODE ! ')
+                checker = [0] * (self.n_cluster + 1)    # 0 , 1 for edges , 2 for cloud
+                for client_id in self.data_clients.keys():
+                    cluster_id = self.data_clients[client_id]['cluster']
+                    if checker[cluster_id] == 0 or checker[cluster_id] + self.data_clients[client_id]['stage'] == 3:
+                        response['splits'] = 'remeasure'
+                        checker[cluster_id] += self.data_clients[client_id]['stage']
+                    else :
+                        response['splits'] = 'wait'
+
+                    self.assign_response(response , client_id)
+                    self.send_to_response(str(client_id), pickle.dumps(response))
+
+                # 2. cluster for each pair of each cluster
+                n_edges_cluster = [0] * (self.n_cluster + 1 )
+                n_clouds_cluster = [0] * (self.n_cluster + 1 )
+                for client_id in self.data_clients:
+                    n_edges_cluster[self.data_clients[client_id]['cluster']] = self.data_clients[client_id]['num_edges']
+                    n_clouds_cluster[self.data_clients[client_id]['cluster']] = self.data_clients[client_id]['num_clouds']
+
+                for cluster_id in range(1 , self.n_cluster + 1):
+                    self.logger.log_debug(f'START RE-MEASURE MODE for cluster {cluster_id}')
+                    data = Controller(self.config, level=cluster_id).run()
+
                     layer_times = data["layer_times"]
+                    layer_times[1] = self.update_list(layer_times[1] , n_edges_cluster[cluster_id] / n_clouds_cluster[cluster_id])
+
                     comm_times = data["comm_times"]
+                    tmp_comm_times = self.update_list(comm_times , n_clouds_cluster[cluster_id] / n_edges_cluster[cluster_id])
+                    comm_times = min(comm_times , tmp_comm_times)
+
                     cost = Data(layer_times, comm_times, data["name_devices"], verbose=False).run()
                     dijkstra_app = Dijkstra(cost, data["name_devices"])
                     splits = get_layer_output(dijkstra_app.run())
-                    src.Log.print_with_color(f"[***] Split point {splits} of {level}", "blue")
-                    response_splits = {
+                    src.Log.print_with_color(f"[***] Split point {splits} of {cluster_id}", "blue")
+                    res = {
                         "splits": splits[0],
-                        "save_layers" : splits[1]
+                        "save_layers": splits[1]
                     }
-                    # 3
-                    for layer, lst_device in layers.items():
-                        for client_id in lst_device :
-                            self.send_to_response(str(client_id) , pickle.dumps(response_splits))
+                    self.split_point[cluster_id] = res
 
+                # 3
+                for client_id in self.data_clients.keys():
+                    split_pt = self.split_point[self.data_clients[client_id]['cluster']]
+                    self.send_to_response(str(client_id), pickle.dumps(split_pt))
 
-        # for (client_id, layer_id) in self.list_clients:
-        #     continue
-        #
-        #     # lst_keys = list(self.storage_level.keys())
-        #     # self.logger.log_debug(f"check type list key 0 {type(lst_keys[0])} of {lst_keys[0]}")
-        #     # self.logger.log_debug(f"client id {client_id} of {type(client_id)}")
-        #     level = 0
-        #     for key , val in self.storage_level.items():
-        #         if client_id.replace("-", "") in key :
-        #             level = val
-        #
-        #     num_edges = len(self.cluster.result[level]['layer 1'])
-        #
-        #     default_splits = {
-        #         "a": (4, [3]),
-        #         "b": (11, [4, 6, 10]),
-        #         "c": (17, [10, 13, 16]),
-        #         "d": (23, [16, 19, 22])
-        #     }
-        #
-        #     # get best cut point
-        #     if self.config["partition"]["auto"]:
-        #         if self.config["partition"]["re-measure"]:
-        #             self.send_to_response(client_id, pickle.dumps(response))
-        #             data = Controller(self.config , level = level).run()
-        #             layer_times = data["layer_times"]
-        #             comm_times = data["comm_times"]
-        #             cost = Data(layer_times, comm_times, data["name_devices"], verbose=True).run()
-        #             # print(layer_times[0])
-        #             # print(layer_times[1])
-        #             # print(comm_times)
-        #             dijkstra_app = Dijkstra(cost, data["name_devices"])
-        #             split_point = get_layer_output(dijkstra_app.run())
-        #             # save_log(split_point)
-        #         else:
-        #             pass
-        #             # split_point = get_log()
-        #     else :
-        #         splits = ['remeasure', 0]
-        #
-        #     if splits == -1:
-        #         splits = default_splits[self.cut_layer]
+                save_partition_cluster(self.split_point)
+
+            else :
+                self.split_point = read_partition_cluster()
+                # response['splits'] = self.split_point[self.data_clients[client_id]['cluster']]
+                for client_id in self.data_clients.keys():
+                    self.assign_response(response, client_id)
+                    response['splits'] = self.split_point[self.data_clients[client_id]['cluster']]['splits']
+                    response['save_layers'] = self.split_point[self.data_clients[client_id]['cluster']]['save_layers']
+                    self.send_to_response(str(client_id), pickle.dumps(response))
+
+        else :
+            default_splits = {
+                        "a": (4, [3]),
+                        "b": (11, [4, 6, 10]),
+                        "c": (17, [10, 13, 16]),
+                        "d": (23, [16, 19, 22])
+                    }
+
+            self.split_point = default_splits[self.cut_layer]
+            # response['splits'] = self.split_point[self.data_clients[client_id]['cluster']]
+            for client_id in self.data_clients.keys():
+                self.assign_response(response, client_id)
+                response['splits'] = self.split_point[0]
+                response['save_layers'] = self.split_point[1]
+                self.send_to_response(str(client_id), pickle.dumps(response))
+

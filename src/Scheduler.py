@@ -28,6 +28,7 @@ class Scheduler:
         self.n_cluster = 2
         self.queue_name = None
         self.num_edges = None
+        self.num_clouds = None
 
         self.bbox_queue = "bbox_queue"
         self.ori_img_queue = "ori_img_queue"
@@ -46,6 +47,7 @@ class Scheduler:
         self.FPSs = []
         self.current_time = None
         self.previous_time = None
+
 
     def send_next_layer(self, intermediate_queue, data, logger, compress, signal='CONTINUE'):
         try:
@@ -146,9 +148,6 @@ class Scheduler:
                     "total_time": total_time,
                     "size_mess2tracker": format_size(self.mess_size.cl1_2_tracker),
                     "size_mess2cl2": format_size(self.mess_size.cl1_2_cl2),
-                    # "GPU_time": str(round(self.gpu_time_1, 5)) + "s",
-                    # "peak_RAM": str(round(self.peak_ram_1, 3)) + "MB",
-                    # "peak_VRAM": str(round(self.peak_vram_1, 3)) + "MB"
                 }
 
             message_bytes = pickle.dumps(message)
@@ -204,7 +203,9 @@ class Scheduler:
                 y = 'STOP'
                 self.gpu_time_1 = self.gpu_time_1 / 1000.0  # convert to second
                 total_time = time.time() - start_time
-                self.send_next_layer(self.queue_name, y, logger, compress, signal='STOP')
+                for _ in range(self.num_clouds):
+                    self.send_next_layer(self.queue_name, y, logger, compress, signal='STOP')
+
                 self.send_ori_img(self.ori_img_queue, y, frame_index, (0, 0), logger, signal='STOP',
                                   total_time=total_time)
                 break
@@ -308,7 +309,10 @@ class Scheduler:
                     self.current_time = time.time()
                     if self.previous_time is not None:
                         delta = (self.current_time - self.previous_time) / batch_frame
-                        fps = 1 / delta
+                        if delta != 0 :
+                            fps = 1 / delta
+                        else :
+                            fps = 50
                         self.FPSs.append(round(fps, 3))
                     self.previous_time = self.current_time
 
@@ -338,10 +342,11 @@ class Scheduler:
     def middle_layer(self, model):
         pass
 
-    def inference_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, level = 1 , num_edges = 1):
+    def inference_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, level = 1 , num_edges = 1 , num_clouds = 1):
         logger.log_debug(f"[DEBUG at inference_func] {level}")
         self.queue_name = f'intermediate_queue_{level}'
         self.num_edges = num_edges
+        self.num_clouds = num_clouds
         self.channel.queue_declare(self.queue_name, durable=False)
         if self.layer_id == 1:
             self.first_layer(model, data, save_layers, batch_frame, logger, compress )
@@ -507,10 +512,11 @@ class Scheduler:
             logger.log_info(f"mAP@0.5:0.95: {average:.4f}")
         logger.log_info(f"Finish Inference.")
 
-    def check_compress_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, cal_map, level = 1 , num_edges = 1):
+    def check_compress_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, cal_map, level = 1 , num_edges = 1, num_clouds = 1) :
         logger.log_debug(f"[DEBUG at check_compress_func] {level}")
         self.queue_name = f'intermediate_queue_{level}'
         self.num_edges = num_edges
+        self.num_clouds = num_clouds
         self.channel.queue_declare(self.queue_name, durable=False)
         if self.layer_id == 1:
             self.check_first_layer(model, data, save_layers, batch_frame, logger, compress, cal_map)

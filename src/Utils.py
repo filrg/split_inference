@@ -325,3 +325,15 @@ def get_log(filename="res/cut_point.log"):
     except FileNotFoundError:
         return None
 
+def save_partition_cluster(dictdata , filename="res/partition_cluster.json"):
+    with open(filename , "w") as f :
+        json.dump(dictdata , f , indent=4)
+
+def read_partition_cluster( filename="res/partition_cluster.json"):
+    data =  {}
+    with open(filename , "r") as f :
+        dict_data = json.load(f)
+
+        for old_key in dict_data.keys():
+            data[int(old_key)] = dict_data[old_key]
+        return data

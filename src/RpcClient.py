@@ -41,17 +41,19 @@ class RpcClient:
     def wait_response(self):
         status = True
         reply_queue_name = f"reply_{self.client_id}"
+        print(f'QUEUE_NAME {reply_queue_name}')
         # print(f"[reply_queue_name] {reply_queue_name}")
         self.channel.queue_declare(reply_queue_name, durable=False)
         while status:
             method_frame, header_frame, body = self.channel.basic_get(queue=reply_queue_name, auto_ack=True)
             if body:
+                # print(f'CHECK BOBY : {body}')
                 status = self.response_message(body)
             time.sleep(0.5)
 
     def response_message(self, body):
         """
-        send device info -> get level -> remeasure -> get split_point
+        send device info -> get cluster_id -> remeasure -> get split_point
         """
 
         self.response = pickle.loads(body)
@@ -70,22 +72,25 @@ class RpcClient:
             cal_map = self.response["cal_map"]
 
             debug_mode = self.response["debug_mode"]
-            level = self.response["level"]
+            cluster_id = self.response["cluster_id"]
             num_edges = self.response["num_edge_layer_1"]
+            num_clouds = self.response['num_clouds']
 
             self.logger = src.Log.Logger(f"res/result.log", debug_mode)
-            src.Log.print_with_color(f'[Level] : {level}' , "blue")
+            src.Log.print_with_color(f'[cluster_id] : {cluster_id}' , "blue")
 
+            self.logger.log_debug(f'SPLITS MESSAGE  {splits}')
             # check re-measure mode
-            if splits == 'remeasure' :
-                print('measure mode ')
-                self.logger.log_debug(f'Check level : {level} \n')
-                if self.layer_id == 1:
-                    app = MessageSender(self.config, level=level)
-                else:
-                    app = MessageReceiver(self.config, level=level)
-                app.run()
-                app.clean()
+            if splits == 'remeasure' or splits == 'wait':
+                if splits == 'remeasure':
+                    print('START REMEASURE MODE')
+                    self.logger.log_debug(f'Check cluster_id : {cluster_id} \n')
+                    if self.layer_id == 1:
+                        app = MessageSender(self.config, level=cluster_id)
+                    else:
+                        app = MessageReceiver(self.config, level=cluster_id)
+                    app.run()
+                    app.clean()
 
                 status = True
                 reply_queue_name = f"reply_{self.client_id}"
@@ -112,13 +117,14 @@ class RpcClient:
                 src.Log.print_with_color(f"Do not load model.", "yellow")
 
             pretrain_model = YOLO(f"{model_name}.pt").model
+            self.logger.log_debug(f'SHOW SPLIT  {splits}')
             self.model = SplitDetectionModel(pretrain_model, split_layer=splits)
             start = time.time()
             self.logger.log_info(f"Start Inference")
             if cal_map["enable"] is False:
-                self.inference_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress , level = level , num_edges = num_edges)
+                self.inference_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress , level = cluster_id , num_edges = num_edges , num_clouds= num_clouds)
             else:
-                self.check_compress_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress, cal_map , level = level , num_edges = num_edges )
+                self.check_compress_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress, cal_map , level = cluster_id , num_edges = num_edges , num_clouds=num_clouds)
             all_time = time.time() - start
             src.Log.print_with_color(f"All time: {all_time}s", 'green')
             # Stop or Error

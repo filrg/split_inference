@@ -108,6 +108,7 @@ class MessageSender:
                         break
                     else:
                         continue
+            self.logger.log_debug(f'sent message with size : {size} MB')
             avg_time = avg_time / self.num_round
             time_ms = avg_time / 1e6
             times.append(time_ms)
@@ -223,6 +224,8 @@ class MessageReceiver:
                     self.send_message(data)
                 else :
                     break
+
+                self.logger.log_debug(f'Received data !')
 
     def run(self):
         while True:
