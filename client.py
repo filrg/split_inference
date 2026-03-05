@@ -1,8 +1,5 @@
-import pika
-import uuid
-import argparse
-import yaml , json
-import torch , random
+import pika , uuid , argparse , yaml , json , random
+import torch
 
 from src.Log import Logger
 import src.Log
@@ -74,7 +71,6 @@ if __name__ == "__main__":
     channel = connection.channel()
 
     logger.log_debug(f"\n [ Layer id ] : {args.layer_id} \n [ UUID client id ] : {client_id} " )
-
 
     scheduler = Scheduler(client_id, args.layer_id , channel, device , config["tracker"]["enable"] ) #, num_client=config['server']['clients'])
     logger.log_debug(" Tracker status : ", config["tracker"]["enable"])

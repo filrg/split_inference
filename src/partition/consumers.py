@@ -152,7 +152,6 @@ class MessageSender:
                 break
         # self.clean()
 
-
     def clean(self):
         """Clean up: close channel and connection safely"""
         try:
