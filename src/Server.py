@@ -3,8 +3,6 @@ import sys
 import base64
 import pika
 import pickle
-import torch
-import torch.nn as nn
 
 import src.Model
 import src.Log
@@ -21,7 +19,7 @@ class Server:
         self.model_name = config["server"]["model"]
         self.total_clients = config["server"]["clients"]
         self.cut_layer = config["server"]["cut-layer"]
-        self.batch_frame = config["server"]["batch-frame"]
+        self.batch_size = config["server"]["batch-size"]
 
         credentials = pika.PlainCredentials(username, password)
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(address, 5672, f'{virtual_host}', credentials))
@@ -36,13 +34,12 @@ class Server:
         self.channel.basic_consume(queue='rpc_queue', on_message_callback=self.on_request)
 
         self.data = config["data"]
-        self.debug_mode = config["debug-mode"]
         self.compress = config["compress"]
-        self.cal_map = config["cal_map"]
 
         log_path = config["log-path"]
         self.logger = src.Log.Logger(f"{log_path}/app.log")
         self.logger.log_info(f"Application start. Server is waiting for {self.total_clients} clients.")
+        src.Log.print_with_color(f"Application start. Server is waiting for {self.total_clients} clients.", "green")
 
     def on_request(self, ch, method, props, body):
         message = pickle.loads(body)
@@ -80,16 +77,21 @@ class Server:
 
     def notify_clients(self):
         default_splits = {
-            "a": (4, [3]),
-            "b": (11, [4, 6, 10]),
-            "c": (17, [10, 13, 16]),
-            "d": (23, [16, 19, 22])
+            "a": 4,
+            "b": 11,
+            "c": 17,
+            "d": 23
         }
-        model = YOLO(f"{self.model_name}.pt")
+        if os.path.exists(f"{self.model_name}.pt"):
+            src.Log.print_with_color(f"Exist {self.model_name}", "green")
+        else:
+            src.Log.print_with_color(f"Download {self.model_name}", "yellow")
+            model = YOLO(f"{self.model_name}.pt")
+
         splits = default_splits[self.cut_layer]
         file_path = f"{self.model_name}.pt"
         if os.path.exists(file_path):
-            src.Log.print_with_color(f"Load model {self.model_name}.", "green")
+            src.Log.print_with_color(f"Send model {self.model_name} to devices.", "green")
             with open(f"{self.model_name}.pt", "rb") as f:
                 file_bytes = f.read()
                 encoded = base64.b64encode(file_bytes).decode('utf-8')
@@ -102,14 +104,11 @@ class Server:
             response = {"action": "START",
                         "message": "Server accept the connection",
                         "model": encoded,
-                        "splits": splits[0],
-                        "save_layers": splits[1],
-                        "batch_frame": self.batch_frame,
+                        "splits": splits,
+                        "batch_size": self.batch_size,
                         "num_layers": len(self.total_clients),
                         "model_name": self.model_name,
                         "data": self.data,
-                        "debug_mode": self.debug_mode,
-                        "compress": self.compress,
-                        "cal_map": self.cal_map}
+                        "compress": self.compress}
 
             self.send_to_response(client_id, pickle.dumps(response))

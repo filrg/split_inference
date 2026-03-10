@@ -1,24 +1,20 @@
 name: YOLO
 server:
-  cut-layer: b #or b, c, d
+  cut-layer: a #or b, c, d
   clients:
     - 1
     - 1
-  model: yolo11n
-  batch-frame: 5
+  model: yolo26n
+  batch-size: 1
 rabbit:
-  address: "192.168.101.91"
-  username: "dai"
-  password: "dai"
+  address: 127.0.0.1
+  username: dai
+  password: dai
   virtual-host: /
 
 data: video.mp4
 log-path: .
-control-count: 10
-debug-mode: False
+control-count: 1
 compress:
-  enable: True
-  num_bit: 8
-cal_map:
   enable: False
-  create_label: False
+  num_bit: 8
