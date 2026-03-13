@@ -44,7 +44,7 @@ def encode_quant_delta(batches, num_bits=4):
     max_q = (1 << num_bits) - 1
 
     vec_len = len(batches[0])
-    arrs = [np.asarray(b, dtype=np.float32).ravel() for b in batches]
+    arrs = [np.asarray(b, dtype=np.float16).ravel() for b in batches]
 
     global_min = min(a.min() for a in arrs)
     global_max = max(a.max() for a in arrs)
@@ -103,7 +103,7 @@ def decode_quant_delta(buf):
         itemsize = np.dtype(dtype).itemsize
         q = np.frombuffer(mv[idx:idx + vec_len * itemsize], dtype=dtype)
         idx += vec_len * itemsize
-    arr = (q.astype(np.float32) * scale) + global_min
+    arr = (q.astype(np.float16) * scale) + global_min
     batches.append(arr.copy())
     q_prev = q.copy()
 
@@ -125,7 +125,7 @@ def decode_quant_delta(buf):
 
         q_curr = q_prev.copy()
         q_curr[diff_bits.astype(bool)] = q_changed
-        batches.append((q_curr.astype(np.float32) * scale) + global_min)
+        batches.append((q_curr.astype(np.float16) * scale) + global_min)
         q_prev = q_curr
 
     return batches

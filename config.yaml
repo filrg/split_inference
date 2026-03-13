@@ -5,16 +5,16 @@ server:
     - 1
     - 1
   model: yolo26n
-  batch-size: 1
+  batch-size: 5
 rabbit:
   address: 127.0.0.1
-  username: dai
-  password: dai
+  username: guest
+  password: guest
   virtual-host: /
 
-data: video.mp4
+data: videos/video.mp4
 log-path: .
 control-count: 1
 compress:
-  enable: False
+  enable: True
   num_bit: 8

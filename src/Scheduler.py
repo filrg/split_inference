@@ -131,10 +131,12 @@ class Scheduler:
                     x, _ = inference(model, x, list_output, splits)
 
                     results = postprocess_yolo(x)
-                    for r in range(len(orig_images)):
-                        img = draw_img(orig_images[r], results[r])
-                        img = cv2.resize(img, (width, height))
-                        out.write(img)
+
+                    # result.mp4
+                    # for r in range(len(orig_images)):
+                    #     img = draw_img(orig_images[r], results[r])
+                    #     img = cv2.resize(img, (width, height))
+                    #     out.write(img)
 
                     pbar.update(batch_size)
                 else:
