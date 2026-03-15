@@ -37,7 +37,7 @@ else:
     device = args.device
     print(f"Using device: {device}")
 
-logger = src.Log.Logger(f"./app.log")
+logger = src.Log.Logger(f"./app.log" , config['debug-mode'])
 logger.log_info(f"Application start.")
 
 credentials = pika.PlainCredentials(username, password)
@@ -48,6 +48,8 @@ if __name__ == "__main__":
     src.Log.print_with_color("[>>>] Client sending registration message to server...", "red")
     data = {"action": "REGISTER", "client_id": client_id, "layer_id": args.layer_id, "message": "Hello from Client!"}
     scheduler = Scheduler(client_id, args.layer_id, channel, device)
+    logger.log_debug(f"client_id : {client_id} , stage {args.layer_id} , "
+                     f"channel {channel} , device {device}")
     client = RpcClient(client_id, args.layer_id, channel ,logger ,scheduler.inference_func, device)
     client.send_to_server(data)
     client.wait_response()

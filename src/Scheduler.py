@@ -13,12 +13,18 @@ class Scheduler:
         self.layer_id = layer_id
         self.channel = channel
         self.device = device
-        self.intermediate_queue = f"intermediate_queue_{self.layer_id}"
-        self.channel.queue_declare(self.intermediate_queue, durable=False)
         self.size_message = None
 
         self.current_time = None
         self.previous_time = None
+
+        # partition and clustering
+        self.my_cluster = 1
+        self.intermediate_queue = f"intermediate_queue_{self.my_cluster}"
+        self.channel.queue_declare(self.intermediate_queue, durable=False)
+
+        self.rpc_queue = f"rpc_queue"
+        self.channel.queue_declare(self.rpc_queue, durable=False)
 
     def send_next_layer(self, intermediate_queue, data, compress):
         if data != 'STOP':
@@ -26,6 +32,10 @@ class Scheduler:
                 data["data"] = [t.cpu().numpy() if isinstance(t, torch.Tensor) else None for t in
                                          data["data"]]
                 data["data"], data["shape"] = Encoder(data_output=data["data"], num_bits=compress["num_bit"])
+
+                # frame index
+                # cluster index
+
             else:
                 data["data"] = [t.cpu() if isinstance(t, torch.Tensor) else None for t in
                                          data["data"]]
@@ -35,13 +45,24 @@ class Scheduler:
             })
             if self.size_message is None:
                 self.size_message = len(message)
-
         else:
             message = pickle.dumps(data)
 
         self.channel.basic_publish(
             exchange='',
             routing_key=intermediate_queue,
+            body=message,
+        )
+
+    def send_to_server(self , mess):
+        message = {
+            'action':mess
+        }
+        message = pickle.dumps(message)
+
+        self.channel.basic_publish(
+            exchange='',
+            routing_key=self.rpc_queue,
             body=message,
         )
 
@@ -57,7 +78,6 @@ class Scheduler:
             Log.print_with_color(f"Not open video", "red")
             return False
 
-        fps = cap.get(cv2.CAP_PROP_FPS)
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
@@ -65,8 +85,7 @@ class Scheduler:
         while True:
             ret, frame = cap.read()
             if not ret:
-                y = 'STOP'
-                self.send_next_layer(self.intermediate_queue, y, compress)
+                self.send_to_server('STOP')
                 break
             frame = cv2.resize(frame, (640, 640))
             orig_images.append(copy.deepcopy(frame))
@@ -81,7 +100,10 @@ class Scheduler:
                 x, y = inference(model, input_image, y, 0)
                 y[-1] = x
 
-                y = {"data": y, "orig_imgs": orig_images, "width": width, "height": height}
+                y = {"data": y,
+                     "width": width,
+                     "height": height
+                     }
 
                 self.send_next_layer(self.intermediate_queue, y, compress)
                 input_image = []
@@ -93,29 +115,18 @@ class Scheduler:
         cap.release()
         pbar.close()
 
-    def last_layer(self, model, batch_size, splits, logger, compress):
-        width = 852
-        height = 480
-        fps = 30
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(
-            "result.mp4",
-            fourcc,
-            fps,
-            (width, height)
-        )
 
+    def last_layer(self, model, batch_size, splits, logger, compress):
         num_last = 1
         count = 0
 
         model.eval()
         model.to(self.device)
-        last_queue = f"intermediate_queue_{self.layer_id - 1}"
-        self.channel.queue_declare(queue=last_queue, durable=False)
+
         self.channel.basic_qos(prefetch_count=10)
         pbar = tqdm(desc="Processing video (while loop)", unit="frame")
         while True:
-            method_frame, header_frame, body = self.channel.basic_get(queue=last_queue, auto_ack=True)
+            method_frame, header_frame, body = self.channel.basic_get(queue=self.intermediate_queue, auto_ack=True)
             if method_frame and body:
                 received_data = pickle.loads(body)
                 if received_data != 'STOP':
@@ -125,21 +136,15 @@ class Scheduler:
                         y["data"] = [torch.from_numpy(t) if t is not None else None for t in y["data"]]
 
                     y["data"] = [t.to(self.device) if t is not None else None for t in y["data"]]
-                    orig_images = y["orig_imgs"]
                     list_output = y["data"]
                     x = list_output[-1]
                     x, _ = inference(model, x, list_output, splits)
 
                     results = postprocess_yolo(x)
 
-                    # result.mp4
-                    # for r in range(len(orig_images)):
-                    #     img = draw_img(orig_images[r], results[r])
-                    #     img = cv2.resize(img, (width, height))
-                    #     out.write(img)
-
                     pbar.update(batch_size)
                 else:
+                    self.send_to_server('STOPPED')
                     count += 1
                     if count == num_last:
                         break
@@ -147,7 +152,7 @@ class Scheduler:
             else:
                 continue
 
-        out.release()
+        # out.release()
         cv2.destroyAllWindows()
         pbar.close()
 
