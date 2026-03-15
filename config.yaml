@@ -1,6 +1,6 @@
 name: YOLO
 server:
-  cut-layer: a #or b, c, d
+  cut-layer: a # or b, c, d
   clients:
     - 1
     - 1
@@ -12,6 +12,7 @@ rabbit:
   password: guest
   virtual-host: /
 
+debug-mode: False
 data: videos/video.mp4
 log-path: .
 control-count: 1
