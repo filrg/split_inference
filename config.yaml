@@ -7,9 +7,9 @@ server:
   model: yolo26n
   batch-size: 5
 rabbit:
-  address: 127.0.0.1
-  username: guest
-  password: guest
+  address: 192.168.101.91
+  username: dai
+  password: dai
   virtual-host: /
 
 debug-mode: False
