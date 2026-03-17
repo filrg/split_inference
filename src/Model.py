@@ -1,27 +1,55 @@
 import cv2
+import cv2
 from torchvision.ops import nms
 
 save_yolo26 = [4,6,10,13,16,19,22]
 input_yolo26 = [None,None,None,None,None,None,None,None,None,None,None,None,[-1,6],None,None,[-1,4],None,None
     ,[-1,13],None,None,[-1,10],None,[16, 19, 22]]
 
-def inference(model, x, y, cut):
+def inference(model, x, y, cut, input_cfg=input_yolo26, save_cfg=save_yolo26):
+    """
+    model: list of layers
+    x: input tensor
+    y: list storing intermediate outputs (auto-resized if needed)
+    cut: starting index offset
+    """
+
+    # ---- Ensure y is large enough ----
+    required_len = len(input_cfg) + cut
+    if len(y) < required_len:
+        y.extend([None] * (required_len - len(y)))
+
     for i, layer in enumerate(model):
         idx = i + cut
-        if input_yolo26[idx] is not None:
-            if input_yolo26[idx][0] == -1:
-                x = [x, y[input_yolo26[idx][1]]]
-            else:
-                x = [y[input_yolo26[idx][0]], y[input_yolo26[idx][1]], y[input_yolo26[idx][2]]]
 
+        # ---- Handle multi-input routing ----
+        if input_cfg[idx] is not None:
+            inputs = input_cfg[idx]
+
+            if inputs[0] == -1:
+                prev = y[inputs[1]]
+                assert prev is not None, f"Layer {inputs[1]} not saved!"
+                x = [x, prev]
+            else:
+                prevs = []
+                for j in inputs:
+                    assert y[j] is not None, f"Layer {j} not saved!"
+                    prevs.append(y[j])
+                x = prevs
+
+        # ---- Fix FP16 + channels_last ----
+        if isinstance(x, list):
+            x = [t.contiguous() if hasattr(t, "contiguous") else t for t in x]
+        else:
+            x = x.contiguous()
+
+        # ---- Forward ----
         x = layer(x)
 
-        if idx in save_yolo26:
-            y.append(x)
-        else:
-            y.append(None)
-    return x, y
+        # ---- Save outputs ----
+        y[idx] = x if idx in save_cfg else None
 
+    return x, y
 def postprocess_yolo(output, conf_thres=0.1, iou_thres=0.1):
     pred_tensor = output[0]   # [B,N,6]
     batch_results = []
