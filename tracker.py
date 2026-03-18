@@ -1,5 +1,5 @@
-import os, pika, yaml
-from src.Tracker_threading import Tracker
+import yaml
+from src.tracker.Tracker_threading import Tracker
 
 if __name__ == "__main__":
     try:

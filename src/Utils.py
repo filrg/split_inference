@@ -1,11 +1,7 @@
-import pika
+import pika , os , cv2
 from requests.auth import HTTPBasicAuth
 import requests
-import os
 import numpy as np
-import cv2
-import pandas as pd
-import csv
 import yaml , json
 
 
@@ -127,71 +123,6 @@ def load_ground_truth(label_dir, image_dir):
                 gts.append([image_id, int(cls), x1, y1, x2, y2])
     return gts
 
-
-""" write to csv file """
-def list_to_dict_with_minus_one(lst):
-    return {key: -1 for key in lst}
-
-cols = [
-    "Time" , "PointCut" ,
-    "[T]totalTM" , "[T]FPSR" ,
-    "[1]totalFr" , "[2]totalTm" , "[1]totalTm",
-    "[1]outSze[T]" , "[1]outSze[2]" ,"[2]outSize",
-    "[1]GPU_time" , "[2]GPU_time" ,
-    "[1]peak_RAM" , "[2]peak_RAM" ,
-    "[1]peak_VRAM" , "[2]peak_VRAM" ,
-]
-
-dict_data = list_to_dict_with_minus_one(cols)
-file_path = "res/output.csv"
-
-row_buffer = {}
-
-def write_partial(partial_data, flush=False):
-    global row_buffer, cols
-
-    # exist output.csv = run this function
-    update_csv_header(file_path ,cols)
-
-    row_buffer.update(partial_data)
-
-    new_cols = [c for c in partial_data.keys() if c not in cols]
-    if new_cols:
-        cols.extend(new_cols)  # add new columns
-        # reload CSV with new header
-        if os.path.exists(file_path):
-            df = pd.read_csv(file_path)
-            for c in new_cols:
-                df[c] = ""  # add empty column for past rows
-            df.to_csv(file_path, index=False)
-
-    if all(col in row_buffer for col in cols):
-        flush = True
-
-    if flush:
-        row_df = pd.DataFrame([row_buffer], columns=cols)
-
-        if not os.path.exists(file_path):
-            row_df.to_csv(file_path, index=False)
-        else:
-            row_df.to_csv(file_path, mode='a', index=False, header=False)
-
-        row_buffer = {}
-        print("[CSV] write csv successfully !")
-
-def update_csv_header(filename, new_headers):
-    with open(filename, "r", newline="", encoding="utf-8") as f:
-        reader = list(csv.reader(f))
-
-    if not reader:
-        raise ValueError("CSV file is empty!")
-
-    # Replace only the first row
-    reader[0] = new_headers
-
-    with open(filename, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerows(reader)
 
 def format_size(size_bytes):
     if size_bytes == 0:

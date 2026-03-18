@@ -47,7 +47,6 @@ class RpcClient:
         while status:
             method_frame, header_frame, body = self.channel.basic_get(queue=reply_queue_name, auto_ack=True)
             if body:
-                # print(f'CHECK BOBY : {body}')
                 status = self.response_message(body)
             time.sleep(0.5)
 

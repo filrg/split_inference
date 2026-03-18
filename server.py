@@ -28,27 +28,7 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 if __name__ == "__main__":
-    # if config["partition"]["auto"] :
-    #     if config["partition"]["re-measure"] :
-    #         data = Controller(config).run()
-    #         layer_times = data["layer_times"]
-    #         comm_times = data["comm_times"]
-    #         cost = Data(layer_times, comm_times , data["name_devices"] , verbose=True).run()
-    #         # print(layer_times[0])
-    #         # print(layer_times[1])
-    #         # print(comm_times)
-    #         dijkstra_app = Dijkstra(cost, data["name_devices"])
-    #         split_point = get_layer_output(dijkstra_app.run())
-    #         save_log(split_point)
-    #     else:
-    #         split_point = get_log()
-    #
-    #     print(f"split point {split_point}")
-    #     signal.signal(signal.SIGINT, signal_handler)
-    #     # delete_old_queues(address, username, password, virtual_host)
-    #     server = Server(config, split_point)
-    # else :
-    #     server = Server(config , -1)    # if para 2nd is -1 , get cut layer a , b, c or d
+    print('Start Server')
     signal.signal(signal.SIGINT, signal_handler)
     delete_old_queues(address, username, password, virtual_host)
     server = Server(config)

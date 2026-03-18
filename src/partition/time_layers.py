@@ -21,7 +21,7 @@ class LayerProfiler:
         # -------------------------
         # Load model (FP16)
         # -------------------------
-        self.model = YOLO(config["model"]).model
+        self.model = YOLO(config["server"]["model"]).model
         self.model.eval().half().to(self.device)
 
         self.x = torch.randn(*self.input_shape, device=self.device).half()

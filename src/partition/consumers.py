@@ -5,7 +5,6 @@ import yaml
 import pika
 import pickle
 import socket
-from src.Utils import write_partial
 from pathlib import Path
 from src.partition.time_layers import LayerProfiler
 from src.partition.tools import get_output_from_json
@@ -68,7 +67,6 @@ class MessageSender:
                               routing_key=queue_device,
                               body=pickle.dumps(messages_dict)
                               )
-        # print(f"Sent {messages_dict["message"]}")
 
     def listening(self , queue_num = 1 ):
         device_queue = self.queue_device_1

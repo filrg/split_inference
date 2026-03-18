@@ -38,8 +38,7 @@ def extract_input_layer(file_name ):
 
     return res_dict
 
-#
-# print(extract_input_layer("yolo11n.yaml"))
+
 
 def load_weights_optimized(model, path):
     """Load weights and remove architecture with random weights.

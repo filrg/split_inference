@@ -307,7 +307,7 @@ class Server:
                     cost = Data(layer_times, comm_times, data["name_devices"], verbose=False).run()
                     dijkstra_app = Dijkstra(cost, data["name_devices"])
                     splits = get_layer_output(dijkstra_app.run())
-                    src.Log.print_with_color(f"[***] Split point {splits} of {cluster_id}", "blue")
+                    src.Log.print_with_color(f"[***] Cluster : {cluster_id} - Split point {splits} ", "blue")
                     res = {
                         "splits": splits[0],
                         "save_layers": splits[1]
@@ -339,7 +339,6 @@ class Server:
                     }
 
             self.split_point = default_splits[self.cut_layer]
-            # response['splits'] = self.split_point[self.data_clients[client_id]['cluster']]
             for client_id in self.data_clients.keys():
                 self.assign_response(response, client_id)
                 response['splits'] = self.split_point[0]
