@@ -55,6 +55,7 @@ class RpcClient:
 
             ckpt = torch.load("yolo26n.pt", map_location=self.device, weights_only=False)
             model = ckpt["model"].to(self.device)
+            model = model.float()
             layers = model.model
             if self.layer_id == 1:
                 client = layers[:splits]

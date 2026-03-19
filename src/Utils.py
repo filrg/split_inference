@@ -71,18 +71,14 @@ def compute_map(preds, gts, iou_threshold=0.1):
 
     ap_list = []
     for cls in sorted(preds_by_class.keys()):
-        # sắp xếp lại theo confidence
         detections = sorted(preds_by_class[cls], key=lambda x: -x[2])
         gt_class = gts_by_class[cls]
         tp, fp = [], []
         matched = defaultdict(set)
-        # tổng tất cả các ground truth của cls
         total_gt = sum(len(boxes) for boxes in gt_class.values())
         for img_id, box_pred, _ in detections:
             matched_gt_boxes = gt_class.get(img_id, [])
-            # match_gt_boxes: tất cả các gt có nhãn là cls trong img_id
             ious = [compute_iou(box_pred, gt_box) for gt_box in matched_gt_boxes]
-            #ious: list các IoU tính được giữa dự đoán và gt trong img_id
             if ious:
                 max_iou = max(ious)
                 max_idx = np.argmax(ious)
@@ -94,7 +90,6 @@ def compute_map(preds, gts, iou_threshold=0.1):
                     tp.append(0)
                     fp.append(1)
             else:
-                # trong img_id không có nhãn đó
                 tp.append(0)
                 fp.append(1)
         ap = compute_ap(tp, fp, total_gt)
@@ -102,7 +97,6 @@ def compute_map(preds, gts, iou_threshold=0.1):
     return np.mean(ap_list) if ap_list else 0.0
 
 def load_ground_truth(label_dir, image_dir):
-    """Tạo gts từ thư mục label"""
     gts = []
     for file in sorted(os.listdir(label_dir)):
         if not file.endswith(".txt"):

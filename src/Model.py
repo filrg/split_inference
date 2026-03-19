@@ -40,7 +40,6 @@ def postprocess_yolo(output, conf_thres=0.1, iou_thres=0.1):
         scores = scores[mask]
         classes = classes[mask]
 
-        # NMS
         keep = nms(boxes, scores, iou_thres)
 
         boxes = boxes[keep]
