@@ -1,11 +1,13 @@
-import pickle
-from tqdm import tqdm
 import torch
 import cv2
+import pickle
+from tqdm import tqdm
+import copy
+import time
+
 from src.Compress import Encoder,Decoder
 import src.Log as Log
-import copy
-from src.Model import inference, postprocess_yolo, draw_img
+from src.Model import inference, postprocess_yolo
 
 class Scheduler:
     def __init__(self, client_id, layer_id, channel, device):
@@ -14,39 +16,26 @@ class Scheduler:
         self.channel = channel
         self.device = device
         self.size_message = None
-
-        self.current_time = None
-        self.previous_time = None
-
-        # partition and clustering
-        self.my_cluster = 1
-        self.intermediate_queue = f"intermediate_queue_{self.my_cluster}"
+        self.intermediate_queue = f"intermediate_queue"
         self.channel.queue_declare(self.intermediate_queue, durable=False)
 
-        self.rpc_queue = f"rpc_queue"
-        self.channel.queue_declare(self.rpc_queue, durable=False)
-
     def send_next_layer(self, intermediate_queue, data, compress):
-        if data != 'STOP':
-            if compress["enable"]:
-                data["data"] = [t.cpu().numpy() if isinstance(t, torch.Tensor) else None for t in
-                                         data["data"]]
-                data["data"], data["shape"] = Encoder(data_output=data["data"], num_bits=compress["num_bit"])
 
-                # frame index
-                # cluster index
+        if compress["enable"]:
+            data["data"] = [t.cpu().numpy() if isinstance(t, torch.Tensor) else None for t in
+                                     data["data"]]
+            data["data"], data["shape"] = Encoder(data_output=data["data"], num_bits=compress["num_bit"])
 
-            else:
-                data["data"] = [t.cpu() if isinstance(t, torch.Tensor) else None for t in
-                                         data["data"]]
-            message = pickle.dumps({
-                "action": "OUTPUT",
-                "data": data
-            })
-            if self.size_message is None:
-                self.size_message = len(message)
         else:
-            message = pickle.dumps(data)
+            data["data"] = [t.cpu() if isinstance(t, torch.Tensor) else None for t in
+                                     data["data"]]
+        message = pickle.dumps({
+            "action": "OUTPUT",
+            "data": data
+        })
+        if self.size_message is None:
+            self.size_message = len(message)
+
 
         self.channel.basic_publish(
             exchange='',
@@ -54,17 +43,11 @@ class Scheduler:
             body=message,
         )
 
-    def send_to_server(self , mess):
-        message = {
-            'action':mess
-        }
-        message = pickle.dumps(message)
-
-        self.channel.basic_publish(
-            exchange='',
-            routing_key=self.rpc_queue,
-            body=message,
-        )
+    def send_to_server(self, message):
+        self.channel.queue_declare('rpc_queue', durable=False)
+        self.channel.basic_publish(exchange='',
+                                   routing_key='rpc_queue',
+                                   body=pickle.dumps(message))
 
     def first_layer(self, model, data, batch_size, logger, compress):
         orig_images = []
@@ -85,11 +68,10 @@ class Scheduler:
         while True:
             ret, frame = cap.read()
             if not ret:
-                self.send_to_server('STOP')
                 break
             frame = cv2.resize(frame, (640, 640))
             orig_images.append(copy.deepcopy(frame))
-            frame = frame.astype('float16') / 255.0
+            frame = frame.astype('float32') / 255.0
             tensor = torch.from_numpy(frame).permute(2, 0, 1)  # shape: (3, 640, 640)
             input_image.append(tensor)
 
@@ -115,11 +97,24 @@ class Scheduler:
         cap.release()
         pbar.close()
 
+        notify_data = {"action": "NOTIFY", "client_id": self.client_id, "layer_id": self.layer_id,
+                       "message": "Finish training!"}
+
+        self.send_to_server(notify_data)
+
+        broadcast_queue_name = f'reply_{self.client_id}'
+        while True:
+            method_frame, header_frame, body = self.channel.basic_get(queue=broadcast_queue_name, auto_ack=True)
+            if body:
+                received_data = pickle.loads(body)
+                Log.print_with_color(f"[<<<] Received message from server {received_data}", "blue")
+                if received_data["action"] == "STOP":
+                    Log.print_with_color("[>>>] Finish!", "red")
+                    break
+            time.sleep(0.5)
+
 
     def last_layer(self, model, batch_size, splits, logger, compress):
-        num_last = 1
-        count = 0
-
         model.eval()
         model.to(self.device)
 
@@ -129,30 +124,32 @@ class Scheduler:
             method_frame, header_frame, body = self.channel.basic_get(queue=self.intermediate_queue, auto_ack=True)
             if method_frame and body:
                 received_data = pickle.loads(body)
-                if received_data != 'STOP':
-                    y = received_data["data"]
-                    if compress["enable"]:
-                        y["data"] = Decoder(y["data"], y["shape"])
-                        y["data"] = [torch.from_numpy(t) if t is not None else None for t in y["data"]]
+                y = received_data["data"]
+                if compress["enable"]:
+                    y["data"] = Decoder(y["data"], y["shape"])
+                    y["data"] = [torch.from_numpy(t) if t is not None else None for t in y["data"]]
 
-                    y["data"] = [t.to(self.device) if t is not None else None for t in y["data"]]
-                    list_output = y["data"]
-                    x = list_output[-1]
-                    x, _ = inference(model, x, list_output, splits)
+                y["data"] = [t.to(self.device) if t is not None else None for t in y["data"]]
+                list_output = y["data"]
+                x = list_output[-1]
+                x, _ = inference(model, x, list_output, splits)
 
-                    results = postprocess_yolo(x)
+                _ = postprocess_yolo(x)
 
-                    pbar.update(batch_size)
-                else:
-                    self.send_to_server('STOPPED')
-                    count += 1
-                    if count == num_last:
-                        break
-                    continue
+                pbar.update(batch_size)
+
             else:
-                continue
+                broadcast_queue_name = f'reply_{self.client_id}'
+                method_frame, header_frame, body = self.channel.basic_get(queue=broadcast_queue_name, auto_ack=True)
+                if body:
+                    received_data = pickle.loads(body)
+                    Log.print_with_color(f"[<<<] Received message from server {received_data}", "blue")
+                    if received_data["action"] == "STOP":
+                        Log.print_with_color("[>>>] Finish!", "red")
+                        break
+                else:
+                    time.sleep(0.5)
 
-        # out.release()
         cv2.destroyAllWindows()
         pbar.close()
 
