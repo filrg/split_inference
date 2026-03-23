@@ -72,8 +72,6 @@ class RpcClient:
 
             debug_mode = self.response["debug_mode"]
             cluster_id = self.response["cluster_id"]
-            num_edges = self.response["num_edge_layer_1"]
-            num_clouds = self.response['num_clouds']
 
             self.logger = src.Log.Logger(f"res/result.log", debug_mode)
             src.Log.print_with_color(f'[cluster_id] : {cluster_id}' , "blue")
@@ -121,9 +119,9 @@ class RpcClient:
             start = time.time()
             self.logger.log_info(f"Start Inference")
             if cal_map["enable"] is False:
-                self.inference_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress , level = cluster_id , num_edges = num_edges , num_clouds= num_clouds)
+                self.inference_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress , level = cluster_id )
             else:
-                self.check_compress_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress, cal_map , level = cluster_id , num_edges = num_edges , num_clouds=num_clouds)
+                self.check_compress_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress, cal_map , level = cluster_id )
             all_time = time.time() - start
             src.Log.print_with_color(f"All time: {all_time}s", 'green')
             # Stop or Error

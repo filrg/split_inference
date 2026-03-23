@@ -17,7 +17,8 @@ from collections import defaultdict
 from src.partition.controller import Controller
 from src.partition.handle_data import Data
 from src.partition.dijkstra import Dijkstra
-from src.Utils import get_layer_output , get_log , save_log , save_partition_cluster , read_partition_cluster
+from src.Utils import get_layer_output , get_log , save_log , save_partition_cluster , read_partition_cluster , delete_old_queues
+
 # from src.Log import log_debug
 
 
@@ -34,10 +35,10 @@ class Server:
         self.config = config
 
         # RabbitMQ
-        address = config["rabbit"]["address"]
-        username = config["rabbit"]["username"]
-        password = config["rabbit"]["password"]
-        virtual_host = config["rabbit"]["virtual-host"]
+        self.address = config["rabbit"]["address"]
+        self.username = config["rabbit"]["username"]
+        self.password = config["rabbit"]["password"]
+        self.virtual_host = config["rabbit"]["virtual-host"]
 
         self.model_name = config["server"]["model"]
         self.total_clients = config["server"]["clients"]
@@ -45,8 +46,8 @@ class Server:
         self.batch_frame = config["server"]["batch-frame"]
         self.split_point = {}
 
-        credentials = pika.PlainCredentials(username, password)
-        self.connection = pika.BlockingConnection(pika.ConnectionParameters(address, 5672, f'{virtual_host}', credentials))
+        credentials = pika.PlainCredentials(self.username, self.password)
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(self.address, 5672, f'{self.virtual_host}', credentials))
         self.channel = self.connection.channel()
         self.channel.queue_declare(queue='rpc_queue')
 
@@ -74,16 +75,24 @@ class Server:
 
         # fine tune code variables
         self.data_clients = {}  # storing all data of clients ( overview )
+        self.total_clients_each_cluster = []    # tuple
 
+        self.quanity_cluster = {
+            "edge"  : [0]*(self.n_cluster + 1) ,
+            "cloud" : [0]*(self.n_cluster + 1)
+        }
+
+        self.quanity_cloud = []
 
 
     def on_request(self, ch: object, method: object, props: object, body: object) -> object:
         message = pickle.loads(body)
         action = message["action"]
-        client_id = message["client_id"]
-        layer_id = message["layer_id"]
 
         if action == "REGISTER":
+            client_id = message["client_id"]
+            layer_id = message["layer_id"]
+
             if (str(client_id), layer_id) not in self.list_clients:
                 self.list_clients.append((str(client_id), layer_id))
 
@@ -121,6 +130,7 @@ class Server:
                 self.logger.log_debug(f'data_clients {self.data_clients}')
 
                 self.logger.log_debug('AFTER CLUSTERING  \n')
+
                 cluster = Clustering(
                     lst_devices = self.lst_devices ,
                     data_clients = self.data_clients,
@@ -130,6 +140,10 @@ class Server:
                 self.logger.log_debug(f'RES {res}')
                 for client_id in self.data_clients.keys():
                     self.data_clients[client_id]['cluster'] = res[client_id]
+
+                print(self.data_clients)
+                self.get_quanity_cluster()
+                self.quanity_cloud = self.quanity_cluster["cloud"].copy()
 
                 self.count_num_edges()
                 self.count_num_clouds()
@@ -147,9 +161,24 @@ class Server:
                 print(f'register clients{self.register_clients}')
                 self.logger.log_debug(f'total client {self.total_clients}')
 
+        elif action == "NOTIFY":
+            self.action_notify(message)
+
+
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     # [ Utils ] start
+    def send_stop_signal(self , cluster_id ):
+        self.intermediate_queue = f"intermediate_queue_{cluster_id}"
+        self.channel.queue_declare(self.intermediate_queue, durable=False)
+        message = 'STOP'
+        message = pickle.dumps(message)
+        for _ in range(self.quanity_cloud[cluster_id]):
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=self.intermediate_queue,
+                body=message,
+            )
     def storing_data(self , dict_data , verbose = True ):
         if verbose :
             self.logger.log_debug(f' === > dict_data before run storing_data function \n {dict_data}')
@@ -164,37 +193,37 @@ class Server:
         if verbose :
             print(f'DATATYPE OF KEY {type(new_key)}')
             print(f'Check data clients \n {self.data_clients}')
-            print(f'\nCheck lst devices info \n {self.lst_devices}')
+            print(f"\nCheck lst devices info \n {self.lst_devices}")
 
     def count_num_edges(self):
-        self.logger.log_debug(f'data clients {self.data_clients}')
+        self.logger.log_debug(f"data clients {self.data_clients}")
         cnt = [0] * (self.n_cluster + 1 )
         for client_id in self.data_clients:
             if self.data_clients[client_id]['stage'] == 1:
-                self.logger.log_debug(f'Check cluster {self.data_clients[client_id]['cluster']}')
+                self.logger.log_debug(f"Check cluster {self.data_clients[client_id]['cluster']}")
                 cnt[self.data_clients[client_id]['cluster']] += 1
 
-        self.logger.log_debug(f'Check count num edges devices \n {cnt}')
+        self.logger.log_debug(f"Check count num edges devices \n {cnt}")
 
         for client_id in self.data_clients:
             self.data_clients[client_id]['num_edges'] = cnt[self.data_clients[client_id]['cluster']]
 
-        self.logger.log_debug(f'Check num edges devices \n {self.data_clients}')
+        self.logger.log_debug(f"Check num edges devices \n {self.data_clients}")
 
     def count_num_clouds(self):
         self.logger.log_debug(f'data clients {self.data_clients}')
         cnt = [0] * (self.n_cluster + 1 )
         for client_id in self.data_clients:
             if self.data_clients[client_id]['stage'] == 2:
-                self.logger.log_debug(f'Check cluster {self.data_clients[client_id]['cluster']}')
+                self.logger.log_debug(f"Check cluster {self.data_clients[client_id]['cluster']}")
                 cnt[self.data_clients[client_id]['cluster']] += 1
 
-        self.logger.log_debug(f'Check count num clouds devices \n {cnt}')
+        self.logger.log_debug(f"Check count num clouds devices \n {cnt}")
 
         for client_id in self.data_clients:
             self.data_clients[client_id]['num_clouds'] = cnt[self.data_clients[client_id]['cluster']]
 
-        self.logger.log_debug(f'Check num clouds devices \n {self.data_clients}')
+        self.logger.log_debug(f"Check num clouds devices \n {self.data_clients}")
 
     def update_list(self , raw_list , para):
         for i in range(len(raw_list)):
@@ -218,7 +247,18 @@ class Server:
             body=message
         )
 
-    # end
+    def get_quanity_cluster(self):
+        for _ , data in self.data_clients.items():
+
+            cluster_id = data["cluster"]
+            if data["stage"] == 1 :
+                self.quanity_cluster["edge"][cluster_id] += 1
+            else :
+                self.quanity_cluster["cloud"][cluster_id] += 1
+
+    # [ Utils ] end
+
+    # [ Main ] start
     def start(self):
         self.channel.start_consuming()
 
@@ -246,16 +286,15 @@ class Server:
                     "compress": self.compress,
                     "cal_map": self.cal_map,
                     "cluster_id": 0 ,    # setup below
-                    "num_edge_layer_1": 0 ,
-                    "num_clouds" : 0
+                    # "num_cluster" : self.n_cluster
                     }
 
         self.logger.log_debug(
-            f'\n RESULT \n {self.cluster.result} \n --------------- \n'
+            f"\n RESULT \n {self.cluster.result} \n --------------- \n"
         )
         self.logger.log_debug(
-            f'\n LIST CLIENT  \n {self.list_clients} \n --------------- \n '
-            f'{type(self.list_clients[0][0])}'
+            f"\n LIST CLIENT  \n {self.list_clients} \n --------------- \n "
+            f"{type(self.list_clients[0][0])}"
         )
 
         if self.config["partition"]["auto"]:
@@ -273,7 +312,7 @@ class Server:
                 """
                 # 1.a choose 2 clients are 1 edge and 1 cloud each cluster to partition .
                 # 1.b send 'remeasure' for clients remeasure , 'wait' for clients
-                self.logger.log_debug('RE-MEASURE MODE ! ')
+                self.logger.log_debug("RE-MEASURE MODE ! ")
                 checker = [0] * (self.n_cluster + 1)    # 0 , 1 for edges , 2 for cloud
                 for client_id in self.data_clients.keys():
                     cluster_id = self.data_clients[client_id]['cluster']
@@ -345,3 +384,41 @@ class Server:
                 response['save_layers'] = self.split_point[1]
                 self.send_to_response(str(client_id), pickle.dumps(response))
 
+    def action_notify(self , message):
+        """
+        notify STOP from client :
+        messaage = {action : NOTIFY
+                    content : STOP
+                    stage : 1   # 1 for edge clients
+                    cluster : cluster_id  }
+        """
+        # edge stage
+        if "stage_id" in message and message["stage_id"] == 1:
+            print(f"NOTIFY from edge stage ")
+            if message["content"] == "STOP":
+                cluster_id = message["cluster_id"]
+                self.quanity_cluster["edge"][cluster_id] -= 1
+
+                if self.quanity_cluster["edge"][cluster_id] == 0:
+                    self.send_stop_signal(cluster_id)
+                elif self.quanity_cluster["edge"][cluster_id] < 0:
+                    print("ERROR self.quanity_cluster[cluster_id] < 0 ")
+
+        # cloud stage
+        elif "stage_id" in message and message["stage_id"] == 2:
+            print(f"NOTIFY from cloud stage ")
+            if message["content"] == "STOPPED":
+                cluster_id = message["cluster_id"]
+                self.quanity_cluster["cloud"][cluster_id] -= 1
+
+            cloud_stop = True
+            for quanity in self.quanity_cluster["cloud"]:
+                if quanity > 0:
+                    cloud_stop = False
+                    break
+
+            if cloud_stop:
+                delete_old_queues(self.address, self.username, self.password, self.virtual_host)
+                sys.exit(0)
+
+    # [ Main ] end

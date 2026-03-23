@@ -32,11 +32,13 @@ class Scheduler:
 
         self.bbox_queue = "bbox_queue"
         self.ori_img_queue = "ori_img_queue"
+        self.rpc_queue = f"rpc_queue"
+        self.channel.queue_declare(self.rpc_queue, durable=False)
 
         self.mess_size = MessageSize()
 
         self.gpu_time_1 = 0
-        self.peak_vram_1 = 0
+        self.peqak_vram_1 = 0
         self.peak_ram_1 = 0
         self.gpu_time_2 = 0
         self.peak_vram_2 = 0
@@ -47,6 +49,8 @@ class Scheduler:
         self.FPSs = []
         self.current_time = None
         self.previous_time = None
+
+        self.cluster_id = 1
 
 
     def send_next_layer(self, intermediate_queue, data, logger, compress, signal='CONTINUE'):
@@ -163,6 +167,23 @@ class Scheduler:
         except Exception as e:
             logger.log_error(f"[send_ori_img]: Failed to send data to tracker. Error: {e}")
 
+    def send_notify_server(self , content , cluster_id , stage_id):
+        message  = {
+            'action'    : "NOTIFY" ,
+            'content'   : content ,
+            'cluster_id'   : cluster_id ,
+            'stage_id'     : stage_id
+        }
+        try :
+            message_dumped = pickle.dumps(message)
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=self.rpc_queue,
+                body=message_dumped
+            )
+        except Exception as e:
+            logger.log_error(f"[send_notify_server]: Failed to send notify to server . Error: {e}")
+
     def first_layer(self, model, data, save_layers, batch_frame, logger, compress ):
         start_time = time.time()
         input_image = []
@@ -177,10 +198,10 @@ class Scheduler:
             self.channel.basic_qos(prefetch_count=50)
 
         model.eval()
-        vram_before_transfer_model = torch.cuda.memory_allocated() / 1024 ** 2
+        # vram_before_transfer_model = torch.cuda.memory_allocated() / 1024 ** 2
         model.to(self.device)
-        vram_after_transfer_model = torch.cuda.memory_allocated() / 1024 ** 2
-        self.vram_of_model = vram_after_transfer_model - vram_before_transfer_model
+        # vram_after_transfer_model = torch.cuda.memory_allocated() / 1024 ** 2
+        # self.vram_of_model = vram_after_transfer_model - vram_before_transfer_model
         video_path = data
         cap = cv2.VideoCapture(video_path)
 
@@ -201,10 +222,11 @@ class Scheduler:
             # send origin frame
             if not ret or frame is None:
                 y = 'STOP'
-                self.gpu_time_1 = self.gpu_time_1 / 1000.0  # convert to second
+                self.send_notify_server(y , self.cluster_id , 1)
+                # self.gpu_time_1 = self.gpu_time_1 / 1000.0  # convert to second
                 total_time = time.time() - start_time
-                for _ in range(self.num_clouds):
-                    self.send_next_layer(self.queue_name, y, logger, compress, signal='STOP')
+                # for _ in range(self.num_clouds):
+                #     self.send_next_layer(self.queue_name, y, logger, compress, signal='STOP')
 
                 self.send_ori_img(self.ori_img_queue, y, frame_index, (0, 0), logger, signal='STOP',
                                   total_time=total_time)
@@ -322,9 +344,10 @@ class Scheduler:
                     logger.log_info(f'End inference {batch_frame} frames.')
 
                     pbar.update(batch_frame)
-                elif received_data == 'STOP' and self.num_edges > 1 :
-                    self.num_edges -= 1
+                # elif received_data == 'STOP' and self.num_edges > 1 :
+                #     self.num_edges -= 1
                 else:
+                    self.send_notify_server("STOPPED" , self.cluster_id , 2)
                     logger.log_debug(f"[Num edges ] {self.num_edges}")
                     print(f"[FPS with batch size {batch_frame} ] : {self.FPSs}")
                     total_time = time.time() - start_time
@@ -342,11 +365,10 @@ class Scheduler:
     def middle_layer(self, model):
         pass
 
-    def inference_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, level = 1 , num_edges = 1 , num_clouds = 1):
+    def inference_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, level = 1 ):
         logger.log_debug(f"[DEBUG at inference_func] {level}")
         self.queue_name = f'intermediate_queue_{level}'
-        self.num_edges = num_edges
-        self.num_clouds = num_clouds
+        self.cluster_id = level
         self.channel.queue_declare(self.queue_name, durable=False)
         if self.layer_id == 1:
             self.first_layer(model, data, save_layers, batch_frame, logger, compress )
@@ -512,12 +534,11 @@ class Scheduler:
             logger.log_info(f"mAP@0.5:0.95: {average:.4f}")
         logger.log_info(f"Finish Inference.")
 
-    def check_compress_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, cal_map, level = 1 , num_edges = 1, num_clouds = 1) :
+    def check_compress_func(self, model, data, num_layers, save_layers, batch_frame, logger, compress, cal_map, level = 1) :
         logger.log_debug(f"[DEBUG at check_compress_func] {level}")
         self.queue_name = f'intermediate_queue_{level}'
-        self.num_edges = num_edges
-        self.num_clouds = num_clouds
         self.channel.queue_declare(self.queue_name, durable=False)
+        self.cluster_id = level
         if self.layer_id == 1:
             self.check_first_layer(model, data, save_layers, batch_frame, logger, compress, cal_map)
         elif self.layer_id == num_layers:
