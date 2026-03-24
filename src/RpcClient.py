@@ -42,7 +42,6 @@ class RpcClient:
         status = True
         reply_queue_name = f"reply_{self.client_id}"
         print(f'QUEUE_NAME {reply_queue_name}')
-        # print(f"[reply_queue_name] {reply_queue_name}")
         self.channel.queue_declare(reply_queue_name, durable=False)
         while status:
             method_frame, header_frame, body = self.channel.basic_get(queue=reply_queue_name, auto_ack=True)
@@ -69,7 +68,6 @@ class RpcClient:
             data = self.response["data"]
             compress = self.response["compress"]
             cal_map = self.response["cal_map"]
-
             debug_mode = self.response["debug_mode"]
             cluster_id = self.response["cluster_id"]
 
@@ -83,9 +81,9 @@ class RpcClient:
                     print('START REMEASURE MODE')
                     self.logger.log_debug(f'Check cluster_id : {cluster_id} \n')
                     if self.layer_id == 1:
-                        app = MessageSender(self.config, level=cluster_id)
+                        app = MessageSender(self.config, stage=cluster_id)
                     else:
-                        app = MessageReceiver(self.config, level=cluster_id)
+                        app = MessageReceiver(self.config, stage=cluster_id)
                     app.run()
                     app.clean()
 
@@ -119,9 +117,9 @@ class RpcClient:
             start = time.time()
             self.logger.log_info(f"Start Inference")
             if cal_map["enable"] is False:
-                self.inference_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress , level = cluster_id )
+                self.inference_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress , stage = cluster_id )
             else:
-                self.check_compress_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress, cal_map , level = cluster_id )
+                self.check_compress_func(self.model, data, num_layers, save_layers, batch_frame, self.logger, compress, cal_map , stage = cluster_id )
             all_time = time.time() - start
             src.Log.print_with_color(f"All time: {all_time}s", 'green')
             # Stop or Error

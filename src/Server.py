@@ -77,12 +77,12 @@ class Server:
         self.data_clients = {}  # storing all data of clients ( overview )
         self.total_clients_each_cluster = []    # tuple
 
-        self.quanity_cluster = {
+        self.quantity_cluster = {
             "edge"  : [0]*(self.n_cluster + 1) ,
             "cloud" : [0]*(self.n_cluster + 1)
         }
 
-        self.quanity_cloud = []
+        self.quantity_cloud = []
 
 
     def on_request(self, ch: object, method: object, props: object, body: object) -> object:
@@ -142,8 +142,8 @@ class Server:
                     self.data_clients[client_id]['cluster'] = res[client_id]
 
                 print(self.data_clients)
-                self.get_quanity_cluster()
-                self.quanity_cloud = self.quanity_cluster["cloud"].copy()
+                self.get_quantity_cluster()
+                self.quantity_cloud = self.quantity_cluster["cloud"].copy()
 
                 self.count_num_edges()
                 self.count_num_clouds()
@@ -173,7 +173,7 @@ class Server:
         self.channel.queue_declare(self.intermediate_queue, durable=False)
         message = 'STOP'
         message = pickle.dumps(message)
-        for _ in range(self.quanity_cloud[cluster_id]):
+        for _ in range(self.quantity_cloud[cluster_id]):
             self.channel.basic_publish(
                 exchange='',
                 routing_key=self.intermediate_queue,
@@ -247,14 +247,14 @@ class Server:
             body=message
         )
 
-    def get_quanity_cluster(self):
+    def get_quantity_cluster(self):
         for _ , data in self.data_clients.items():
 
             cluster_id = data["cluster"]
             if data["stage"] == 1 :
-                self.quanity_cluster["edge"][cluster_id] += 1
+                self.quantity_cluster["edge"][cluster_id] += 1
             else :
-                self.quanity_cluster["cloud"][cluster_id] += 1
+                self.quantity_cluster["cloud"][cluster_id] += 1
 
     # [ Utils ] end
 
@@ -286,7 +286,6 @@ class Server:
                     "compress": self.compress,
                     "cal_map": self.cal_map,
                     "cluster_id": 0 ,    # setup below
-                    # "num_cluster" : self.n_cluster
                     }
 
         self.logger.log_debug(
@@ -397,28 +396,42 @@ class Server:
             print(f"NOTIFY from edge stage ")
             if message["content"] == "STOP":
                 cluster_id = message["cluster_id"]
-                self.quanity_cluster["edge"][cluster_id] -= 1
+                self.quantity_cluster["edge"][cluster_id] -= 1
 
-                if self.quanity_cluster["edge"][cluster_id] == 0:
+                if self.quantity_cluster["edge"][cluster_id] == 0:
                     self.send_stop_signal(cluster_id)
-                elif self.quanity_cluster["edge"][cluster_id] < 0:
-                    print("ERROR self.quanity_cluster[cluster_id] < 0 ")
+                elif self.quantity_cluster["edge"][cluster_id] < 0:
+                    print("ERROR self.quantity_cluster[cluster_id] < 0 ")
 
         # cloud stage
         elif "stage_id" in message and message["stage_id"] == 2:
             print(f"NOTIFY from cloud stage ")
             if message["content"] == "STOPPED":
                 cluster_id = message["cluster_id"]
-                self.quanity_cluster["cloud"][cluster_id] -= 1
+                self.quantity_cluster["cloud"][cluster_id] -= 1
 
             cloud_stop = True
-            for quanity in self.quanity_cluster["cloud"]:
-                if quanity > 0:
+            for quantity in self.quantity_cluster["cloud"]:
+                if quantity > 0:
                     cloud_stop = False
                     break
 
             if cloud_stop:
                 delete_old_queues(self.address, self.username, self.password, self.virtual_host)
                 sys.exit(0)
+
+    def action_register(self , message):
+        """
+        1 . get ad check existing of client_id in list_clients .
+        2 . if does not exist then add to list clients else break .
+        3 . adding and storing data to data_clients ( dict )
+        4 . check quantity of clients .
+        5 . clustering
+        6 . assign cluster id to each client in data_clients
+        """
+        client_id = message["client_id"]
+        layer_id = message["layer_id"]
+
+
 
     # [ Main ] end
