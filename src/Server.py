@@ -19,17 +19,6 @@ from src.partition.handle_data import Data
 from src.partition.dijkstra import Dijkstra
 from src.Utils import get_layer_output , get_log , save_log , save_partition_cluster , read_partition_cluster , delete_old_queues
 
-# from src.Log import log_debug
-
-
-@dataclass
-class Cluster:
-    device_names: list = field(default_factory=list)
-    features: np.ndarray = field(default_factory=lambda: np.array([]))
-    data: dict = field(default_factory=dict)
-    data_names: dict = field(default_factory=dict)
-    result: dict = field(default_factory=dict)
-
 class Server:
     def __init__(self, config ):
         self.config = config
@@ -63,25 +52,16 @@ class Server:
         self.debug_mode = config["debug-mode"]
         self.compress = config["compress"]
         self.cal_map = config["cal_map"]
-
-        log_path = config["log-path"]
-        self.logger = src.Log.Logger(f"{log_path}/app.log" , debug_mode = self.debug_mode)
-        self.logger.log_info(f"Application start. Server is waiting for {self.total_clients} clients.")
-
-        # Handle message for clustering
-        self.cluster = Cluster()
-        self.cluster.data_names = defaultdict(list)
         self.n_cluster = config["clustering"]["num_clusters"]
 
-        # fine tune code variables
-        self.data_clients = {}  # storing all data of clients ( overview )
-        self.total_clients_each_cluster = []    # tuple
+        self.logger = src.Log.Logger(f"{config["log-path"]}/app.log" , debug_mode = self.debug_mode)
+        self.logger.log_info(f"Application start. Server is waiting for {self.total_clients} clients.")
 
+        self.data_clients = {}  # storing all data of clients ( overview )
         self.quantity_cluster = {
             "edge"  : [0]*(self.n_cluster + 1) ,
             "cloud" : [0]*(self.n_cluster + 1)
         }
-
         self.quantity_cloud = []
 
 
@@ -90,80 +70,9 @@ class Server:
         action = message["action"]
 
         if action == "REGISTER":
-            client_id = message["client_id"]
-            layer_id = message["layer_id"]
-
-            if (str(client_id), layer_id) not in self.list_clients:
-                self.list_clients.append((str(client_id), layer_id))
-
-                # Handle message for Clustering
-                self.cluster.data_names[layer_id].append(message['client_id'])
-                self.storing_data(message , verbose=False)
-                # 1. Extract the data into a list
-                lst_data = [val for _, val in message['device'].items()]
-                new_row = np.asarray(lst_data)
-                layer_id = int(message["layer_id"])
-                self.logger.log_debug("New row data " + str(new_row))
-                self.logger.log_debug("Layer id " + str( layer_id))
-
-                if layer_id not in self.cluster.data:
-                    # Use [new_row] or reshape to make it 2D (1 row, N columns)
-                    self.cluster.data[layer_id] = np.array([new_row]).reshape(1 , -1)
-                else:
-                    # Stack the new row vertically
-                    self.cluster.data[layer_id] = (
-                        np.vstack((self.cluster.data[layer_id], new_row))
-                    )
-
-            self.logger.log_debug("Check output cluster data " , self.cluster.data)
-            self.logger.log_debug("Check output cluster features " , self.cluster.features)
-            src.Log.print_with_color(f"[<<<] Received message from client: {message}", "blue")
-
-            # check the number of clients each stage
-            self.register_clients[layer_id-1] += 1
-
-            # If consumed all clients - Register for first time
-            if self.register_clients == self.total_clients:
-
-                self.logger.log_debug('DATA USE FOR CLUSTER BEFORE HANDLE ')
-                self.logger.log_debug(f'lst_devices {self.lst_devices}')
-                self.logger.log_debug(f'data_clients {self.data_clients}')
-
-                self.logger.log_debug('AFTER CLUSTERING  \n')
-
-                cluster = Clustering(
-                    lst_devices = self.lst_devices ,
-                    data_clients = self.data_clients,
-                    n_cluster = self.n_cluster
-                )
-                res = cluster.run()
-                self.logger.log_debug(f'RES {res}')
-                for client_id in self.data_clients.keys():
-                    self.data_clients[client_id]['cluster'] = res[client_id]
-
-                print(self.data_clients)
-                self.get_quantity_cluster()
-                self.quantity_cloud = self.quantity_cluster["cloud"].copy()
-
-                self.count_num_edges()
-                self.count_num_clouds()
-
-                self.logger.log_debug('DATA CLIENTS AFTER CLUSTERING ')
-                self.logger.log_debug(self.data_clients)
-
-                # send notify to clients include cluster id and partition point
-                self.notify_clients()
-
-                self.logger.log_debug('SENT NOTIFY TO CLIENTS ')
-
-            else:
-                print('not matching register clients and total clients ')
-                print(f'register clients{self.register_clients}')
-                self.logger.log_debug(f'total client {self.total_clients}')
-
+            self.action_register(message)
         elif action == "NOTIFY":
             self.action_notify(message)
-
 
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -203,8 +112,6 @@ class Server:
                 self.logger.log_debug(f"Check cluster {self.data_clients[client_id]['cluster']}")
                 cnt[self.data_clients[client_id]['cluster']] += 1
 
-        self.logger.log_debug(f"Check count num edges devices \n {cnt}")
-
         for client_id in self.data_clients:
             self.data_clients[client_id]['num_edges'] = cnt[self.data_clients[client_id]['cluster']]
 
@@ -217,8 +124,6 @@ class Server:
             if self.data_clients[client_id]['stage'] == 2:
                 self.logger.log_debug(f"Check cluster {self.data_clients[client_id]['cluster']}")
                 cnt[self.data_clients[client_id]['cluster']] += 1
-
-        self.logger.log_debug(f"Check count num clouds devices \n {cnt}")
 
         for client_id in self.data_clients:
             self.data_clients[client_id]['num_clouds'] = cnt[self.data_clients[client_id]['cluster']]
@@ -288,9 +193,6 @@ class Server:
                     "cluster_id": 0 ,    # setup below
                     }
 
-        self.logger.log_debug(
-            f"\n RESULT \n {self.cluster.result} \n --------------- \n"
-        )
         self.logger.log_debug(
             f"\n LIST CLIENT  \n {self.list_clients} \n --------------- \n "
             f"{type(self.list_clients[0][0])}"
@@ -421,17 +323,53 @@ class Server:
                 sys.exit(0)
 
     def action_register(self , message):
-        """
-        1 . get ad check existing of client_id in list_clients .
-        2 . if does not exist then add to list clients else break .
-        3 . adding and storing data to data_clients ( dict )
-        4 . check quantity of clients .
-        5 . clustering
-        6 . assign cluster id to each client in data_clients
-        """
         client_id = message["client_id"]
         layer_id = message["layer_id"]
 
+        if (str(client_id), layer_id) not in self.list_clients:
+            self.list_clients.append((str(client_id), layer_id))
 
+            # Handle message for Clustering
+            self.storing_data(message, verbose=False)
+            layer_id = int(message["layer_id"])
+
+        src.Log.print_with_color(f"[<<<] Received message from client: {message}", "blue")
+
+        # check the number of clients each stage
+        self.register_clients[layer_id - 1] += 1
+
+        # If consumed all clients - Register for first time
+        if self.register_clients == self.total_clients:
+
+            self.logger.log_debug('DATA USE FOR CLUSTER BEFORE HANDLE ')
+            self.logger.log_debug(f'lst_devices {self.lst_devices}')
+            self.logger.log_debug(f'data_clients {self.data_clients}')
+
+            self.logger.log_debug('AFTER CLUSTERING  \n')
+
+            cluster = Clustering(
+                lst_devices=self.lst_devices,
+                data_clients=self.data_clients,
+                n_cluster=self.n_cluster
+            )
+            res = cluster.run()
+            self.logger.log_debug(f'RES {res}')
+            for client_id in self.data_clients.keys():
+                self.data_clients[client_id]['cluster'] = res[client_id]
+
+            print(self.data_clients)
+            self.get_quantity_cluster()
+            self.quantity_cloud = self.quantity_cluster["cloud"].copy()
+
+            self.count_num_edges()
+            self.count_num_clouds()
+
+            self.logger.log_debug('DATA CLIENTS AFTER CLUSTERING ')
+            self.logger.log_debug(self.data_clients)
+
+            # send notify to clients include cluster id and partition point
+            self.notify_clients()
+
+            self.logger.log_debug('SENT NOTIFY TO CLIENTS ')
 
     # [ Main ] end
