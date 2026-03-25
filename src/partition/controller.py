@@ -89,15 +89,18 @@ class Controller :
                 while True :
                     data = self.listening()
                     if data is not None :
-                        signal = data["signal"]
-                        if "time_layer" in signal :
-                            signal = signal.split(" ")[1]
-                            count_devices.append(signal)
+                        if "stage" in data:
+                            stage = data["stage"]
+                            count_devices.append(stage)
                             count_layer_times.append(data["message"])
-                            # print(f"[list device {count_clients}")
+
                         if len(count_devices) == 2 :
-                            self.data["name_devices"] = count_devices 
-                            self.data["layer_times"] = count_layer_times
+                            if count_devices [0]  == 2 :
+                                self.data["name_devices"] = count_devices[::-1]
+                                self.data["layer_times"] = count_layer_times[::-1]
+                            else :
+                                self.data["name_devices"] = count_devices
+                                self.data["layer_times"] = count_layer_times
                             break
                 while True :
                     data = self.listening(queue_num=3)

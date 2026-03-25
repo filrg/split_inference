@@ -16,16 +16,16 @@ INFINITY_TIME = 1000000
 
 
 class MessageSender:
-    def __init__(self, config , level = 'level 1'):
+    def __init__(self, config , stage = 1):
         print("Start sender ... ")
         # Init
         log_path = config["log-path"]
         debug_mode = config["debug-mode"]
         self.logger = src.Log.Logger(f"{log_path}/app.log" , debug_mode = debug_mode)
         self.config = config
-        self.queue_device_1 = f'{config["rabbit"]["queue_device_1"]}_{level}'
-        self.queue_device_2 = f'{config["rabbit"]["queue_device_2"]}_{level}'
-        self.queue_device_3 = f"host_queue_{level}"
+        self.queue_device_1 = f'{config["rabbit"]["queue_device_1"]}_{stage}'
+        self.queue_device_2 = f'{config["rabbit"]["queue_device_2"]}_{stage}'
+        self.queue_device_3 = f"host_queue_{stage}"
 
         self.logger.log_debug('Message Sender ')
         self.logger.log_debug(f'Name of queue device 1 : {self.queue_device_1} ')
@@ -135,7 +135,7 @@ class MessageSender:
                     res = [ x * self.batch_size for x in res]
                     print(f"[Time layers] : {res}")
                     self.send_message({
-                        "signal" : "time_layer " + "1",
+                        "stage" : 1,
                         "message" : res
                     })
                 print("Start comm times function ")
@@ -162,16 +162,16 @@ class MessageSender:
             print(f"Error during clean-up: {e}")
 
 class MessageReceiver:
-    def __init__(self, config: dict , level = 'level 1'):
+    def __init__(self, config: dict , stage = 1):
         print("Start Receiver ... ")
         # Init
         log_path = config["log-path"]
         debug_mode = config["debug-mode"]
         self.logger = src.Log.Logger(f"{log_path}/app.log", debug_mode=debug_mode)
         self.config = config
-        self.queue_device_1 = f'{config["rabbit"]["queue_device_1"]}_{level}'
-        self.queue_device_2 = f'{config["rabbit"]["queue_device_2"]}_{level}'
-        self.queue_device_3 = f"host_queue_{level}"
+        self.queue_device_1 = f'{config["rabbit"]["queue_device_1"]}_{stage}'
+        self.queue_device_2 = f'{config["rabbit"]["queue_device_2"]}_{stage}'
+        self.queue_device_3 = f"host_queue_{stage}"
 
         self.logger.log_debug('Message Receiver ')
         self.logger.log_debug(f'Name of queue device 1 : {self.queue_device_1} ')
@@ -239,7 +239,7 @@ class MessageReceiver:
                     res = [x * self.batch_size for x in res]
                     print(f"[Time layers] : {res}")
                     self.send_message({
-                        "signal": "time_layer 2",
+                        "stage" : 2,
                         "message": res
                     })
                 print("Start comm times function ")

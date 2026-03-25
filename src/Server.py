@@ -288,14 +288,14 @@ class Server:
     def action_notify(self , message):
         """
         notify STOP from client :
-        messaage = {action : NOTIFY
+        message = {action : NOTIFY
                     content : STOP
                     stage : 1   # 1 for edge clients
                     cluster : cluster_id  }
         """
         # edge stage
         if "stage_id" in message and message["stage_id"] == 1:
-            print(f"NOTIFY from edge stage ")
+            # print(f"NOTIFY from edge stage ")
             if message["content"] == "STOP":
                 cluster_id = message["cluster_id"]
                 self.quantity_cluster["edge"][cluster_id] -= 1
@@ -307,7 +307,7 @@ class Server:
 
         # cloud stage
         elif "stage_id" in message and message["stage_id"] == 2:
-            print(f"NOTIFY from cloud stage ")
+            # print(f"NOTIFY from cloud stage ")
             if message["content"] == "STOPPED":
                 cluster_id = message["cluster_id"]
                 self.quantity_cluster["cloud"][cluster_id] -= 1
@@ -357,7 +357,6 @@ class Server:
             for client_id in self.data_clients.keys():
                 self.data_clients[client_id]['cluster'] = res[client_id]
 
-            print(self.data_clients)
             self.get_quantity_cluster()
             self.quantity_cloud = self.quantity_cluster["cloud"].copy()
 

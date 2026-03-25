@@ -77,4 +77,3 @@ class Dijkstra :
         # print(self.machine[1] , " : ",lst_nodes[cut_point :])
         return cut_point + 1
 
-

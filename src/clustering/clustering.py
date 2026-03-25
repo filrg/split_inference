@@ -106,12 +106,8 @@ class Clustering:
             for client_id in self.lst_devices[stage]:
                 if client_id != 0  :
                     id_names.append(client_id)
-                    print(f'check client id {client_id}')
                     features.append(self.extract_device_info(self.data_clients[client_id]['device']))
 
-            print(f'stage {stage}')
-            print(f'id names {id_names}')
-            print(f'features {features}')
 
             cluster = ClKmeans(
                 features=features,

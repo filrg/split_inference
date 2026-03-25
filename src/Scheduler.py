@@ -220,7 +220,6 @@ class Scheduler:
             h, w, c = frame.shape
             orig_img_size = (h, w)
             # make border
-            # size = max(h, w)
             if h > w:
                 border_size = h - w
                 frame = cv2.copyMakeBorder(frame, 0, 0, 0, border_size, cv2.BORDER_CONSTANT, value=(0, 0, 0))
@@ -228,7 +227,6 @@ class Scheduler:
                 border_size = w - h
                 frame = cv2.copyMakeBorder(frame, 0, border_size, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0))
 
-            # self.send_ori_img(self.queue.ori_img, frame, frame_index, orig_img_size, logger, total_frames)
             lst_frame.append(frame)
             frame = cv2.resize(frame, (640, 640))
             frame = frame.astype('float32') / 255.0
@@ -253,13 +251,6 @@ class Scheduler:
 
                 logger.log_info(f'End inference {batch_frame} frames.')
 
-                # y["img_shape"] = preprocess_image.shape[2:]
-                # y["orig_imgs_shape"] = input_image.shape[2:]
-                # y["orig_imgs"] = copy.copy(input_image)
-                #
-                # y["width"] = width
-                # y["height"] = height
-
                 self.send_next_layer(self.queue.intermadiate, y, logger, compress)
                 logger.log_info('Send a message.')
                 input_image = []
@@ -283,8 +274,6 @@ class Scheduler:
         process = psutil.Process(os.getpid())
         model.eval()
         model.to(self.device)
-        # self.queue.intermadiate = f"intermediate_queue_{self.layer_id - 1}"
-        # self.channel.queue_declare(queue=self.queue.intermadiate, durable=False)
         self.channel.basic_qos(prefetch_count=50)
 
         if self.enable_tracker:
