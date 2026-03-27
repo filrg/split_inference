@@ -313,6 +313,14 @@ class Tracker:
                     orig_imgs=orig_imgs_list
                 )
 
+                print("debug")
+                print(origin_frame_shape[:2])
+                print(len(orig_imgs_list))
+                print(orig_imgs_list[0].shape)
+                print(type(orig_imgs_list[0]))
+                print(type(orig_imgs_list))
+                print("end debug")
+
                 if results:
                     for result in results:
 

@@ -1,16 +1,15 @@
-import pickle
+import pickle , os , copy , time , psutil , cv2 , torch , json
 from tqdm import tqdm
-import torch
-import cv2
 from src.Model import SplitDetectionPredictor
 from src.Compress import Encoder, Decoder
 from src.Utils import load_ground_truth, compute_map, format_size
-import os
-import copy
-import time
-import psutil
 from dataclasses import dataclass
 from src.Log import Logger
+# from evaluation.mAP.save_to_predictions import post_process
+import numpy as np
+from src.tracker.tools import BoundingBox
+# import split_inference.evaluation.mAP.save_to_predictions
+from evaluation.mAP.save_to_predictions import Predictions
 
 @dataclass
 class MessageSize:
@@ -49,6 +48,7 @@ class Scheduler:
         self.previous_time = None
 
         self.cluster_id = 1
+        self.ori_img_size = []
 
 
     def send_next_layer(self, intermediate_queue, data, logger, compress, signal='CONTINUE'):
@@ -66,7 +66,8 @@ class Scheduler:
                                              data["layers_output"]]
                 message = pickle.dumps({
                     "action": "OUTPUT",
-                    "data": data
+                    "data": data,
+                    "origin_image_size" : self.ori_img_size
                 })
                 if self.mess_size.cl1_2_cl2 == - 1:
                     self.mess_size.cl1_2_cl2 = len(message)
@@ -218,7 +219,10 @@ class Scheduler:
                 break
 
             h, w, c = frame.shape
+            self.ori_img_size = [h , w, c]
             orig_img_size = (h, w)
+            # print(f"shape of origin image {h} and {w}")
+
             # make border
             if h > w:
                 border_size = h - w
@@ -289,6 +293,7 @@ class Scheduler:
                 received_data = pickle.loads(body)
                 if received_data != 'STOP' :
                     y = received_data["data"]
+                    h , w , _ = received_data["origin_image_size"]
 
                     if compress["enable"]:
                         logger.log_info(f'Start Decode.')
@@ -301,7 +306,44 @@ class Scheduler:
 
                     # Tail predict
                     logger.log_info(f'Start inference {batch_frame} frames.')
+                    h = 480
+                    w = 852
+
+                    predictor = BoundingBox(overrides={"imgsz": 640})
+
                     predictions = model.forward_tail(y)
+
+
+                    # results = predictor.postprocess(
+                    #     predictions,
+                    #     img_shape=(640, 640),
+                    #     orig_shape=(852, 852),
+                    #     orig_imgs= self.dummy_images(5)
+                    # )
+                    #
+                    # r = results[0]
+                    #
+                    # boxes = r.boxes.xyxy
+                    # confs = r.boxes.conf
+                    # clss = r.boxes.cls
+                    #
+                    # for i in range(len(boxes)):
+                    #     x1, y1, x2, y2 = boxes[i]
+                    #
+                    #     cx = ((x1 + x2) / 2) / w
+                    #     cy = ((y1 + y2) / 2) / h
+                    #     bw = (x2 - x1) / w
+                    #     bh = (y2 - y1) / h
+
+                    processor = Predictions(save=True)
+
+                    results = processor.postprocess_v2(
+                        preds=predictions,
+                        img=(640, 640),
+                        frame_idx=frame_index,
+                        orig_img_shape=(h, w),
+                    )
+
                     self.current_time = time.time()
                     if self.previous_time is not None:
                         delta = (self.current_time - self.previous_time) / batch_frame
@@ -318,8 +360,6 @@ class Scheduler:
                     logger.log_info(f'End inference {batch_frame} frames.')
 
                     pbar.update(batch_frame)
-                # elif received_data == 'STOP' and self.num_edges > 1 :
-                #     self.num_edges -= 1
                 else:
                     self.send_notify_server("STOPPED" , self.cluster_id , 2)
                     logger.log_debug(f"[Num edges ] {self.num_edges}")
@@ -527,4 +567,12 @@ class Scheduler:
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
         return total_frames
+
+    def dummy_images(self , batch , h = 852 , w = 852):
+        c = 3
+
+        images = [np.zeros((h, w, c), dtype=np.uint8)
+                  for _ in range(batch)]
+
+        return images
 
