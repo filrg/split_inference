@@ -10,9 +10,9 @@ server:
 
 # ---- RabbitMQ Configuration ----
 rabbit:
-  address: 127.0.0.1
-  username: guest
-  password: guest
+  address: 192.168.101.91
+  username: dai
+  password: dai
 
   virtual-host: /
   queue_device_1: "device1"
