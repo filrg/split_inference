@@ -63,13 +63,13 @@ while True:
     # draw ground truth (green)
     for cls, x1, y1, x2, y2 in gt_boxes:
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 2)
-        cv2.putText(frame, f"GT {cls}", (x1, y1-5),
+        cv2.putText(frame, f"{cls}", (x1, y1-5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
 
     # draw predictions (blue)
     for cls, x1, y1, x2, y2 in pred_boxes:
         cv2.rectangle(frame, (x1, y1), (x2, y2), (255,0,0), 2)
-        cv2.putText(frame, f"Pred {cls}", (x1, y1-5),
+        cv2.putText(frame, f"{cls}", (x1+20, y1-5),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 2)
 
     cv2.putText(frame, f"Frame: {frame_id}", (20,30),

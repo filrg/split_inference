@@ -28,13 +28,15 @@ class QueueName:
 
 
 class Scheduler:
-    def __init__(self, client_id, layer_id, channel, device, tracker=True):
+    def __init__(self, client_id, layer_id, channel, device, tracker=True , mAP = True):
         self.client_id = client_id
         self.layer_id = layer_id
         self.channel = channel
         self.device = device
         self.enable_tracker = tracker
+        self.enable_map = mAP
         self.n_cluster = 2
+
         self.num_edges = None
         self.num_clouds = None
 
@@ -48,7 +50,7 @@ class Scheduler:
         self.previous_time = None
 
         self.cluster_id = 1
-        self.ori_img_size = []
+        self.orig_img_size = []
 
 
     def send_next_layer(self, intermediate_queue, data, logger, compress, signal='CONTINUE'):
@@ -67,7 +69,7 @@ class Scheduler:
                 message = pickle.dumps({
                     "action": "OUTPUT",
                     "data": data,
-                    "origin_image_size" : self.ori_img_size
+                    "origin_image_size" : self.orig_img_size
                 })
                 if self.mess_size.cl1_2_cl2 == - 1:
                     self.mess_size.cl1_2_cl2 = len(message)
@@ -210,6 +212,31 @@ class Scheduler:
             ret, frame = cap.read()
             # send origin frame
             if not ret or frame is None:
+                if len(lst_frame) > 0 :
+                    self.send_ori_img(self.queue.ori_img, lst_frame, frame_index, self.orig_img_size, logger,
+                                      total_frames)
+                    input_image = torch.stack(input_image)
+                    logger.log_info(f'Start inference {len(lst_frame)} frames.')
+                    input_image = input_image.to(self.device)
+                    # Prepare data
+                    predictor.setup_source(input_image)
+                    for predictor.batch in predictor.dataset:
+                        path, input_image, _ = predictor.batch
+
+                    # Preprocess
+                    preprocess_image = predictor.preprocess(input_image)
+
+                    # Head predictf
+                    y = model.forward_head(preprocess_image, save_layers)
+
+                    logger.log_info(f'End inference {len(lst_frame)} frames.')
+
+                    self.send_next_layer(self.queue.intermadiate, y, logger, compress)
+                    logger.log_info('Send a message.')
+                    pbar.update(len(lst_frame))
+                    frame_index += len(lst_frame)
+
+
                 y = 'STOP'
                 self.send_notify_server(y , self.cluster_id , 1)
                 total_time = time.time() - start_time
@@ -219,9 +246,7 @@ class Scheduler:
                 break
 
             h, w, c = frame.shape
-            self.ori_img_size = [h , w, c]
-            orig_img_size = (h, w)
-            # print(f"shape of origin image {h} and {w}")
+            self.orig_img_size = [h , w]
 
             # make border
             if h > w:
@@ -238,7 +263,7 @@ class Scheduler:
             input_image.append(tensor)
 
             if len(input_image) == batch_frame:
-                self.send_ori_img(self.queue.ori_img, lst_frame, frame_index, orig_img_size, logger, total_frames)
+                self.send_ori_img(self.queue.ori_img, lst_frame, frame_index, self.orig_img_size, logger, total_frames)
                 input_image = torch.stack(input_image)
                 logger.log_info(f'Start inference {batch_frame} frames.')
                 input_image = input_image.to(self.device)
@@ -260,7 +285,7 @@ class Scheduler:
                 input_image = []
                 lst_frame = []
                 pbar.update(batch_frame)
-                frame_index += 1
+                frame_index += batch_frame
             else:
                 continue
 
@@ -293,7 +318,7 @@ class Scheduler:
                 received_data = pickle.loads(body)
                 if received_data != 'STOP' :
                     y = received_data["data"]
-                    h , w , _ = received_data["origin_image_size"]
+                    h , w = received_data["origin_image_size"]
 
                     if compress["enable"]:
                         logger.log_info(f'Start Decode.')
@@ -306,47 +331,23 @@ class Scheduler:
 
                     # Tail predict
                     logger.log_info(f'Start inference {batch_frame} frames.')
-                    h = 480
-                    w = 852
-
-                    predictor = BoundingBox(overrides={"imgsz": 640})
 
                     predictions = model.forward_tail(y)
+                    batch_size = len(predictions[0])
 
+                    if self.enable_map :
+                        processor = Predictions(save=True)
 
-                    # results = predictor.postprocess(
-                    #     predictions,
-                    #     img_shape=(640, 640),
-                    #     orig_shape=(852, 852),
-                    #     orig_imgs= self.dummy_images(5)
-                    # )
-                    #
-                    # r = results[0]
-                    #
-                    # boxes = r.boxes.xyxy
-                    # confs = r.boxes.conf
-                    # clss = r.boxes.cls
-                    #
-                    # for i in range(len(boxes)):
-                    #     x1, y1, x2, y2 = boxes[i]
-                    #
-                    #     cx = ((x1 + x2) / 2) / w
-                    #     cy = ((y1 + y2) / 2) / h
-                    #     bw = (x2 - x1) / w
-                    #     bh = (y2 - y1) / h
-
-                    processor = Predictions(save=True)
-
-                    results = processor.postprocess_v2(
-                        preds=predictions,
-                        img=(640, 640),
-                        frame_idx=frame_index,
-                        orig_img_shape=(h, w),
-                    )
+                        results = processor.postprocess_v2(
+                            preds=predictions,
+                            img=(640, 640),
+                            frame_idx=frame_index,
+                            orig_img_shape=(h, w),
+                        )
 
                     self.current_time = time.time()
                     if self.previous_time is not None:
-                        delta = (self.current_time - self.previous_time) / batch_frame
+                        delta = (self.current_time - self.previous_time) / batch_size
                         if delta != 0 :
                             fps = 1 / delta
                         else :
@@ -355,15 +356,15 @@ class Scheduler:
                     self.previous_time = self.current_time
 
                     self.send_to_tracker(self.queue.bbox, predictions, frame_index, logger)
-                    frame_index += batch_frame
+                    frame_index += batch_size
 
-                    logger.log_info(f'End inference {batch_frame} frames.')
+                    logger.log_info(f'End inference {batch_size} frames.')
 
-                    pbar.update(batch_frame)
+                    pbar.update(batch_size)
                 else:
                     self.send_notify_server("STOPPED" , self.cluster_id , 2)
                     logger.log_debug(f"[Num edges ] {self.num_edges}")
-                    print(f"[FPS with batch size {batch_frame} ] : {self.FPSs}")
+                    # print(f"[FPS with batch size {batch_frame} ] : {self.FPSs}")
                     total_time = time.time() - start_time
                     self.send_to_tracker(self.queue.bbox, 'STOP', frame_index, logger, 'STOP', total_time)
                     count += 1
@@ -567,12 +568,3 @@ class Scheduler:
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
         return total_frames
-
-    def dummy_images(self , batch , h = 852 , w = 852):
-        c = 3
-
-        images = [np.zeros((h, w, c), dtype=np.uint8)
-                  for _ in range(batch)]
-
-        return images
-
