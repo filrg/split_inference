@@ -46,6 +46,7 @@ class Scheduler:
         self.channel.queue_declare(self.queue.rpc, durable=False)
 
         self.FPSs = []
+        self.prev_fps = -1
         self.current_time = None
         self.previous_time = None
 
@@ -78,7 +79,10 @@ class Scheduler:
                     exchange='',
                     routing_key=intermediate_queue,
                     body=message,
+                    # body= "."
                 )
+
+                print(len(pickle.dumps(data)), ",", end="")
             else:
                 message = pickle.dumps(data)
                 self.channel.basic_publish(
@@ -86,6 +90,7 @@ class Scheduler:
                     routing_key=intermediate_queue,
                     body=message,
                 )
+
         except Exception as e:
             logger.log_error(f"[send_next_layer]: Failed to send data to next layer. Error: {e}")
 
@@ -226,8 +231,11 @@ class Scheduler:
                     # Preprocess
                     preprocess_image = predictor.preprocess(input_image)
 
-                    # Head predictf
+                    # Head prediction
                     y = model.forward_head(preprocess_image, save_layers)
+
+                    # print size
+                    # print(len(y))
 
                     logger.log_info(f'End inference {len(lst_frame)} frames.')
 
@@ -275,8 +283,11 @@ class Scheduler:
                 # Preprocess
                 preprocess_image = predictor.preprocess(input_image)
 
-                # Head predictf
+                # Head prediction
                 y = model.forward_head(preprocess_image, save_layers)
+
+                # print("size message "  , len(y))
+                # print(y)
 
                 logger.log_info(f'End inference {batch_frame} frames.')
 
@@ -289,7 +300,7 @@ class Scheduler:
             else:
                 continue
 
-        print(f'\nsize message: {self.mess_size.cl1_2_cl2 // (1024 * 1024)} MB.')
+        # print(f'\nsize message: {self.mess_size.cl1_2_cl2 // (1024 * 1024)} MB.')
         logger.log_info(f'\nsize message: {self.mess_size.cl1_2_cl2// (1024 * 1024)} MB.')
         cap.release()
         pbar.close()
@@ -346,13 +357,14 @@ class Scheduler:
                         )
 
                     self.current_time = time.time()
+
                     if self.previous_time is not None:
-                        delta = (self.current_time - self.previous_time) / batch_size
-                        if delta != 0 :
-                            fps = 1 / delta
-                        else :
-                            fps = 50
-                        self.FPSs.append(round(fps, 3))
+                        elapsed = self.current_time - self.previous_time
+
+                        if elapsed > 0:
+                            fps = batch_size / elapsed
+                            self.FPSs.append(round(fps, 3))
+
                     self.previous_time = self.current_time
 
                     self.send_to_tracker(self.queue.bbox, predictions, frame_index, logger)
@@ -375,6 +387,7 @@ class Scheduler:
                 continue
         pbar.close()
         logger.log_info(f"Finish Inference.")
+        print(f"FPS : {self.FPSs}")
 
     def middle_layer(self, model):
         pass
