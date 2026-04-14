@@ -199,7 +199,7 @@ class DirectoryMAPCalculator:
 
         return np.mean(scores)
 
-pred_dir = "../dataset/predictions"
+pred_dir = "../datasets/predictions"
 gt_dir = "../datasets/groundtruth"
 
 calc = DirectoryMAPCalculator()

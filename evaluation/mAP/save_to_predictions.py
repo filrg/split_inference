@@ -6,8 +6,8 @@ import torch
 class Predictions:
     def __init__(
         self,
-        conf=0.25,
-        iou=0.45,
+        conf=0.1,  # 0.25
+        iou=0.7,
         agnostic_nms=False,
         max_det=300,
         classes=None,
