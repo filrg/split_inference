@@ -3,12 +3,18 @@ from collections import deque
 
 class Dijkstra :
     def __init__(self , cost , machine):
-        self.cost = cost
-        self.num_points = len(cost)//2 - 1
+        # self.cost = cost
+        self.vertex_cost = cost["vertex"]
+        self.link_cost = cost["link"]
+        # self.num_points = len(self.vertex_cost)//2 - 1
+        self.num_points = (len(self.vertex_cost) - 1) // 2
+
         self.machine = machine
 
         # config node
-        self.start = 1
+        self.start = 0
+
+        print("Star Dijkstra !!!")
 
     def dijkstra(self ):
         visited = set()
@@ -31,12 +37,12 @@ class Dijkstra :
             store.append(current_node)
 
             # relax neighbors
-            for j, edge_cost in enumerate(self.cost[current_node["node"]]):
+            for j, edge_cost in enumerate(self.link_cost[current_node["node"]]):
                 if edge_cost != -1 and j not in visited:
                     new_node = {
                         "node": j,
                         "prev": current_node["node"],
-                        "cost": current_node["cost"] + edge_cost
+                        "cost": current_node["cost"] + edge_cost + self.vertex_cost[j]
                     }
 
                     exist = False
@@ -53,7 +59,8 @@ class Dijkstra :
 
     def run(self):
         trace_back = self.dijkstra()
-        end_node = self.num_points * 2
+        # end_node = self.num_points * 2
+        end_node = len(self.vertex_cost) - 1
         curr_node = end_node
         lst_nodes = []
         while True:
@@ -75,5 +82,9 @@ class Dijkstra :
         # print(self.machine[0] , " : ", lst_nodes[:cut_point])
         # lst_nodes = [x - self.num_points for x in lst_nodes]
         # print(self.machine[1] , " : ",lst_nodes[cut_point :])
+        if cut_point == 0 :
+            cut_point += 1
+        elif cut_point >= 24 :
+            cut_point = 22
         return cut_point + 1
 
