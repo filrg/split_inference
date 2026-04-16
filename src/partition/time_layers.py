@@ -22,9 +22,15 @@ class LayerProfiler:
         # Load model (FP16)
         # -------------------------
         self.model = YOLO(config["server"]["model"]).model
-        self.model.eval().half().to(self.device)
+        if self.device == "cuda":
+            self.model.eval().half().to(self.device)
 
-        self.x = torch.randn(*self.input_shape, device=self.device).half()
+            self.x = torch.randn(*self.input_shape, device=self.device).half()
+        else :
+            self.model.eval().to(self.device)
+
+            self.x = torch.randn(*self.input_shape, device=self.device)
+
 
         # -------------------------
         # Storage

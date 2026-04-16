@@ -82,7 +82,7 @@ class Scheduler:
                     # body= "."
                 )
 
-                print(len(pickle.dumps(data)), ",", end="")
+                # print(len(message), ",", end="")
             else:
                 message = pickle.dumps(data)
                 self.channel.basic_publish(
