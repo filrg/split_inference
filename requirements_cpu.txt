@@ -42,6 +42,6 @@ tqdm==4.67.1
 typing_extensions==4.15.0
 tzdata==2025.2
 ultralytics==8.4.39
-ultralytics-thop==2.0.17
+ultralytics-thop
 urllib3==2.5.0
 scikit-learn
