@@ -10,8 +10,10 @@ from ultralytics.nn.tasks import DetectionModel
 
 from src.partition.tools import extract_input_layer , load_weights_optimized
 
+
 class SplitDetectionModel(nn.Module):
-    def __init__(self, cfg=YOLO('yolo11n.pt').model, split_layer=-1):
+    # def __init__(self, cfg=YOLO('yolo11n.pt').model, split_layer=-1):
+    def __init__(self, cfg , split_layer=-1):
         super().__init__()
         self.model = cfg.model
         self.save = cfg.save
@@ -30,10 +32,8 @@ class SplitDetectionModel(nn.Module):
         self.output = extract_input_layer("yolo11n.yaml")
 
 
-
     def forward_head(self, x, output_from=()):
         # print(self.output)
-        # print(f"[DEBUG] [check output] {output_from} [check save] {self.save}")
         y, dt = [], []  # outputs
         for i, m in enumerate(self.head):
             if m.f != -1:  # if not from previous layer

@@ -1,8 +1,4 @@
-import os
-import sys
-import base64
-import pika
-import pickle
+import os , sys , base64 , pickle , pika
 import torch
 import torch.nn as nn
 
@@ -21,6 +17,7 @@ from src.Utils import get_layer_output , get_log , save_log , save_partition_clu
 
 class Server:
     def __init__(self, config ):
+        # print("start i")
         self.config = config
 
         # RabbitMQ
@@ -54,7 +51,7 @@ class Server:
         self.cal_map = config["cal_map"]
         self.n_cluster = config["clustering"]["num_clusters"]
 
-        self.logger = src.Log.Logger(f"{config["log-path"]}/app.log" , debug_mode = self.debug_mode)
+        self.logger = src.Log.Logger(f"{config['log-path']}/app.log" , debug_mode = self.debug_mode)
         self.logger.log_info(f"Application start. Server is waiting for {self.total_clients} clients.")
 
         self.data_clients = {}  # storing all data of clients ( overview )
@@ -169,6 +166,7 @@ class Server:
 
     def notify_clients(self):
         file_path = f"{self.model_name}.pt"
+        _ = YOLO(file_path)
         if os.path.exists(file_path):
             src.Log.print_with_color(f"Load model {self.model_name}.", "green")
             with open(f"{self.model_name}.pt", "rb") as f:
