@@ -131,8 +131,11 @@ class MessageSender:
             if data is not None :
                 if data["signal"] == "START" :
                     layer_times_app = LayerProfiler(self.config)
+                    # warm - up
+                    for i in range(10):
+                        res = layer_times_app.run()
                     res = layer_times_app.run()
-                    res = [ x * self.batch_size for x in res]
+                    # res = [ x * self.batch_size for x in res]
                     print(f"[Time layers] : {res}")
                     self.send_message({
                         "stage" : 1,
@@ -235,8 +238,11 @@ class MessageReceiver:
             if data is not None:
                 if data["signal"] == "START":
                     layer_times_app = LayerProfiler(self.config)
+                    # warm - up
+                    for i in range(10):
+                        res = layer_times_app.run()
                     res = layer_times_app.run()
-                    res = [x * self.batch_size for x in res]
+                    # res = [x * self.batch_size for x in res]
                     print(f"[Time layers] : {res}")
                     self.send_message({
                         "stage" : 2,
