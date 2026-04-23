@@ -7,6 +7,8 @@ from queue import Queue, Empty
 from src.tracker.tools import BoundingBox, Tools, write_partial, dict_data
 from dataclasses import dataclass, field
 
+# from evaluation.mAP.visual import Visual
+from src.tracker.visual import Visual_tracker
 
 # ---- Data Structures ----
 
@@ -21,16 +23,11 @@ class Frame:
     showed: int = 0
     start: int = -1
 
-
-# ---- Tracker Core ----
-
 class Tracker:
     def __init__(self, config):
 
-        # Split Inference Pipeline
         self.time_start_process = time.time()
 
-        # ---- RabbitMQ Connection ----
         rabbit_config = config.get("rabbit", {})
         self.batch_size = config["server"]["batch-frame"]
 
@@ -50,7 +47,6 @@ class Tracker:
 
         print("[Tracker] Connected to RabbitMQ.")
 
-        # ---- Queue Configuration ----
         self.bbox_queue = "bbox_queue"
         self.ori_img_queue = "ori_img_queue"
 
@@ -60,13 +56,12 @@ class Tracker:
         self.bbox_buffer = {}
         self.image_buffer = {}
 
-        # ---- Thread / State Control ----
         self.stop_event = threading.Event()
         self.image_stream_stopped = False
         self.bbox_stream_stopped = False
 
-        # ---- FPS / Display ----
         self.fps = FPS()
+        self.tracker_visualizer = Visual_tracker(fps=25)
         self.orig_img_size = (0, 0)
 
         self.dict_data = dict_data
@@ -74,24 +69,22 @@ class Tracker:
 
         self.prev_imshow = time.time()
 
-        # display thread (lazy start)
         self.task_display = threading.Thread(target=self.display, daemon=True)
         self.task_display_started = False
         self.check_display = False
 
-        # ---- Frame Tracking ----
         self.frame = Frame()
         self.cnt_img = 0
         self.cnt_bbox = 0
 
-        # ---- Timing ----
         self.start_time = -1
         self.time_start_receive = -1
         self.time_start_display = 0
 
-    # ---- Queue Setup ----
-
     def _declare_queues(self):
+        """
+        Queue name setup
+        """
         self.channel.queue_declare(queue=self.bbox_queue, durable=False)
         self.channel.queue_declare(queue=self.ori_img_queue, durable=False)
 
@@ -166,6 +159,7 @@ class Tracker:
             # Split Inference Pipeline
             predictions = message.get("predictions")
             self.bbox_buffer_queue.put(predictions)
+            # print(f"get bbox from stage 2 {predictions}")
 
             self.cnt_bbox += self.batch_size
             self.handle_data()
@@ -179,9 +173,8 @@ class Tracker:
             except Exception:
                 pass
 
-    # ---- Listening Loop ----
-
     def start_listening(self):
+        """ Listening loop """
         self._declare_queues()
 
         self.channel.basic_consume(
@@ -219,9 +212,8 @@ class Tracker:
         print(f"[Tracker][Time] total time: {total_time:.2f}s")
         print("[Tracker] All streams stopped.")
 
-    # ---- Main Runner ----
-
     def run(self):
+        """ Main runner """
         self.start_time = time.time()
 
         try:
@@ -245,9 +237,8 @@ class Tracker:
         finally:
             self.cleanup()
 
-    # ---- Cleanup ----
-
     def cleanup(self):
+        """ Main runner """
         try:
             self.data_for_csv()
             write_partial(self.dict_data)
@@ -269,88 +260,74 @@ class Tracker:
 
             print("[Tracker] Connection closed.")
 
-    # ---- Display Thread ----
-
     def display(self):
-        print("[DISPLAY] started")
+        pending_data_frame = None
+        pending_data_bbox = None
 
         while not self.stop_event.is_set():
 
-            # exit condition
             if (
-                self.image_stream_stopped and
-                self.bbox_stream_stopped and
-                self.image_buffer_queue.empty() and
-                self.bbox_buffer_queue.empty()
+                    self.image_stream_stopped and
+                    self.bbox_stream_stopped and
+                    self.image_buffer_queue.empty() and
+                    self.bbox_buffer_queue.empty()
             ):
                 break
 
-            try:
-                origin_frame_test = self.image_buffer_queue.get(timeout=1)
-                raw_prediction_tensor = self.bbox_buffer_queue.get(timeout=1)
+            if pending_data_frame is None:
+                try:
+                    pending_data_frame = self.image_buffer_queue.get(timeout=0.05)
+                except Empty:
+                    pass
 
-            except Empty:
-                continue
+            if pending_data_bbox is None:
+                try:
+                    pending_data_bbox = self.bbox_buffer_queue.get(timeout=0.05)
+                except Empty:
+                    pass
 
-            except Exception as e:
-                print("[Tracker][display] get error:", e)
-                continue
+            if pending_data_frame is not None and pending_data_bbox is not None:
+                if self.frame.showed == 0:
+                    self.time_start_display = time.time()
 
-            if self.frame.showed == 0:
-                self.time_start_display = time.time()
+                try:
+                    if isinstance(pending_data_frame, list):
+                        np_frames = np.array(pending_data_frame, dtype=np.uint8)
+                    else:
+                        np_frames = pending_data_frame
 
-            try:
-                # Split Inference Pipeline
-                origin_frame_shape = origin_frame_test[0].shape
-                orig_imgs_list = origin_frame_test
+                    is_running = True
 
-                predictor = BoundingBox(overrides={"imgsz": 640})
-
-                results = predictor.postprocess(
-                    preds=raw_prediction_tensor,
-                    img_shape=(640, 640),
-                    orig_shape=origin_frame_shape[:2],
-                    orig_imgs=orig_imgs_list
-                )
-
-                print("debug")
-                print(origin_frame_shape[:2])
-                print(len(orig_imgs_list))
-                print(orig_imgs_list[0].shape)
-                print(type(orig_imgs_list[0]))
-                print(type(orig_imgs_list))
-                print("end debug")
-
-                if results:
-                    for result in results:
-
-                        # render result
-                        annotated_image = result.plot()
-                        annotated_image = annotated_image[
-                            :self.orig_img_size[0],
-                            :self.orig_img_size[1]
-                        ]
-
-                        cv2.imshow("Visual Detection Output", annotated_image)
-
-                        key = cv2.waitKey(int(1000 / max(1, self.fps.target))) & 0xFF
-                        if key == ord('q'):
-                            print("[Tracker] display stopped by user")
-                            self.stop_event.set()
-                            break
-
+                    if np_frames.ndim == 3:
+                        is_running = self.tracker_visualizer.run(np_frames, pending_data_bbox)
                         self.frame.showed += 1
 
-                # FPS calculation
-                if self.frame.total and self.frame.showed >= self.frame.total:
-                    elapsed = time.time() - self.time_start_display if self.time_start_display > 0 else 1e-6
-                    self.fps.mean = round(self.frame.total / elapsed, self.digits)
-                    break
+                    elif np_frames.ndim == 4:
+                        for i in range(np_frames.shape[0]):
+                            single_frame = np_frames[i]
+                            single_bbox = pending_data_bbox[i] if len(pending_data_bbox) > i else []
 
-            except Exception as e:
-                print("[Tracker][display] processing error:", e)
+                            is_running = self.tracker_visualizer.run(single_frame, single_bbox)
+                            self.frame.showed += 1
 
-    # ---- Synchronization Logic ----
+                            if not is_running:
+                                break
+                    else:
+                        print(f"[Warning]  shape: {np_frames.shape}")
+
+                    pending_data_frame = None
+                    pending_data_bbox = None
+
+                    if not is_running:
+                        self.stop_event.set()
+                        break
+
+                except Exception as e:
+                    print("[Tracker][display] run visualizer error:", e)
+                    pending_data_frame = None
+                    pending_data_bbox = None
+            else:
+                continue
 
     def handle_data(self):
 
@@ -383,7 +360,6 @@ class Tracker:
 
             print(f"[Frame start] {self.frame.start}")
 
-        # ---- Trigger Display Thread ----
         elif (
             self.frame.start != -1 and
             self.frame_received >= self.frame.start and
@@ -399,8 +375,6 @@ class Tracker:
                     self.task_display_started = True
                 except RuntimeError as e:
                     print("[Tracker][handle_data] thread error:", e)
-
-    # ---- Logging ----
 
     def data_for_csv(self):
         print("data for csv")

@@ -11,6 +11,7 @@ from src.tracker.tools import BoundingBox
 # import split_inference.evaluation.mAP.save_to_predictions
 from evaluation.mAP.save_to_predictions import Predictions
 
+
 @dataclass
 class MessageSize:
     cl1_2_tracker: int = -1
@@ -102,17 +103,21 @@ class Scheduler:
         # send bounding box to tracker from client 2 to tracker
         try:
             if signal != 'STOP':
-                if not isinstance(predictions, (list, tuple)) or len(predictions) == 0 or not isinstance(predictions[0],
-                                                                                                         torch.Tensor):
-                    logger.log_warning(
-                        f"Frame {frame_index}: Invalid prediction format received. Skipping send to tracker.")
-                    return
-
-                prediction_tensor = predictions[0]
-                prediction_tensor_cpu = prediction_tensor.cpu()
-
+                # if not isinstance(predictions, (list, tuple)) or len(predictions) == 0 or not isinstance(predictions[0],
+                #                                                                                          torch.Tensor):
+                #     logger.log_warning(
+                #         f"Frame {frame_index}: Invalid prediction format received. Skipping send to tracker.")
+                #     return
+                #
+                # prediction_tensor = predictions[0]
+                # prediction_tensor_cpu = prediction_tensor.cpu()
+                #
+                # message_to_tracker = {
+                #     "predictions": prediction_tensor_cpu,
+                #     "frame_index": frame_index
+                # }
                 message_to_tracker = {
-                    "predictions": prediction_tensor_cpu,
+                    "predictions": predictions,
                     "frame_index": frame_index
                 }
                 if self.mess_size.cl2_2_tracker == -1:
@@ -189,6 +194,7 @@ class Scheduler:
         start_time = time.time()
         input_image = []
         lst_frame = []
+        lst_org_frame = []
         predictor = SplitDetectionPredictor(model, overrides={"imgsz": 640})
         process = psutil.Process(os.getpid())
 
@@ -255,7 +261,11 @@ class Scheduler:
 
             h, w, c = frame.shape
             self.orig_img_size = [h , w]
+            # print(f"origin image shape {h} {w}")
 
+
+
+            lst_org_frame.append(frame)
             # make border
             if h > w:
                 border_size = h - w
@@ -271,7 +281,8 @@ class Scheduler:
             input_image.append(tensor)
 
             if len(input_image) == batch_frame:
-                self.send_ori_img(self.queue.ori_img, lst_frame, frame_index, self.orig_img_size, logger, total_frames)
+                self.send_ori_img(self.queue.ori_img, lst_org_frame, frame_index, self.orig_img_size, logger, total_frames)
+                lst_org_frame = []
                 input_image = torch.stack(input_image)
                 logger.log_info(f'Start inference {batch_frame} frames.')
                 input_image = input_image.to(self.device)
@@ -344,18 +355,39 @@ class Scheduler:
                     logger.log_info(f'Start inference {batch_frame} frames.')
 
                     predictions = model.forward_tail(y)
+                    # Before: batch_size = len(predictions[0])
+
+                    # Add this Debug block:
+                    # ... inside last_layer ...
+                    if predictions is None:
+                        print("!!! DEBUG: Predictions is None on Jetson Orin !!!")
+                        print(f"Model Device: {next(model.parameters()).device}")
+                        print(f"Model Dtype: {next(model.parameters()).dtype}")
+
+                        # FIXED DEBUG INFO:
+                        # Use 'y' (the dict containing layers_output) or 'body'
+                        print(f"Input Type: {type(y)}")
+                        if isinstance(y, dict) and "layers_output" in y:
+                            # Check the first non-None tensor in the split inference output
+                            first_tensor = next((t for t in y["layers_output"] if t is not None), None)
+                            if first_tensor is not None:
+                                print(f"Intermediate Tensor Shape: {first_tensor.shape}")
+                                print(f"Intermediate Tensor Device: {first_tensor.device}")
+
+                        return
                     batch_size = len(predictions[0])
 
-                    if self.enable_map :
-                        processor = Predictions(save=True)
+                    # if self.enable_map :
+                    processor = Predictions(save=self.enable_map)
 
-                        results = processor.postprocess_v2(
-                            preds=predictions,
-                            img=(640, 640),
-                            frame_idx=frame_index,
-                            orig_img_shape=(h, w),
-                        )
+                    results = processor.postprocess_v2(
+                        preds=predictions,
+                        img=(640, 640),
+                        frame_idx=frame_index,
+                        orig_img_shape=(h, w),
+                    )
 
+                    # compute FPS
                     self.current_time = time.time()
 
                     if self.previous_time is not None:
@@ -367,7 +399,8 @@ class Scheduler:
 
                     self.previous_time = self.current_time
 
-                    self.send_to_tracker(self.queue.bbox, predictions, frame_index, logger)
+                    # self.send_to_tracker(self.queue.bbox, predictions, frame_index, logger)
+                    self.send_to_tracker(self.queue.bbox, results, frame_index, logger)
                     frame_index += batch_size
 
                     logger.log_info(f'End inference {batch_size} frames.')
